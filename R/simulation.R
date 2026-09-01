@@ -550,3 +550,5 @@ mean_df %>%
                      labels = c("1", "2", "3")) +
   labs(x = "Functional domain", y = "Smoothed outcome") +
   theme_light(base_size = 14)
+
+
