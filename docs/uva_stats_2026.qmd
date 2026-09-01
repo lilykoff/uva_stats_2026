@@ -1,0 +1,479 @@
+---
+title: "Function on Scalar Regression under Complex Survey Settings"
+title-slide-attributes:
+    # data-background-image: figs/koff-talk-ds.png
+    data-background-size: 20%
+    data-background-position: 90% 90%
+subtitle: ""
+author: "Lily Koffman"
+institute: "UVA School of Data Science" 
+format:
+  revealjs:
+    theme: custom.scss
+    slide-number: true
+    toc: true
+    toc-depth: 1
+    progress: true
+    hash: true
+    overview: true
+    code-overflow: wrap
+    code-line-numbers: false
+    center: false
+    width: 1400
+    height: 850
+    html-math-method: mathjax
+    embed-resources: true
+    logo: figs/color-screen.png
+    footer: tinyurl.com/xx
+code: 
+  echo: false
+  cache: true 
+editor_options: 
+  chunk_output_type: console
+bibliography: references.bib
+---
+
+
+```{r load packages}
+#| include: false 
+
+library(patchwork)
+library(tidyverse)
+library(plotly)
+library(ggridges)
+library(paletteer)
+library(viridis)
+library(geomtextpath)
+library(showtext)
+library(scales)
+library(ggplot2)
+library(ggrepel)
+library(broom)
+library(mgcv)
+library(survival)
+library(ggimage)
+library(cowplot)
+library(tidyfun)
+library(survminer)
+options(digits.secs = 3)
+
+```
+
+```{r ggplot theme}
+#| include: false  
+
+okabe_ito <- c(
+  "#000000", "#E69F00", "#56B4E9", "#009E73",
+  "#F0E442", "#0072B2", "#D55E00", "#CC79A7"
+)
+
+showtext_auto()
+font_add_google("Libre Franklin", "Libre Franklin")
+theme_set(
+  theme_minimal(base_family = "Libre Franklin") +
+    theme(
+      plot.background = element_rect(fill = "#f6f5f3", color = NA),
+      panel.background = element_rect(fill = "#f6f5f3", color = NA),
+      panel.grid.major = element_line(color = "#e1dfdb"),
+      panel.grid.minor = element_blank(),
+      axis.text = element_text(color = "#1a1a1a", size = 12),
+      axis.title = element_text(color = "#1a1a1a", size = 14),
+      plot.title = element_text(face = "bold", size = 18, color = "#000000"),
+      plot.subtitle = element_text(size = 14, color = "#444444"),
+      strip.background = element_rect(fill = "darkgrey", color = NA),
+      strip.text = element_text(color = "white", size = 12)
+    )
+)
+
+scale_color_okabe <- function(...) scale_color_manual(values = okabe_ito, ...)
+scale_fill_okabe  <- function(...) scale_fill_manual(values = okabe_ito, ...)
+
+```
+
+
+```{r read in data}
+covars = read_rds(here::here("data", "covariates_accel_mortality_df.rds"))
+mims_sl = read_rds(here::here("data", "mims_covariates.rds"))
+# add age cat
+mims_sl = 
+  mims_sl |> 
+  mutate(age_cat = cut(age_in_years_at_screening, breaks = c(0, 17, 29, 39, 49, 59, 69, Inf),
+                       labels = c("<18", "18-29", "30-39", "40-49", "50-59", "60-69", "70+")), include.lowest = TRUE) 
+  
+btrue_df = read_rds(here::here("data", "btrue_df_sim.rds"))
+b1_strat_df = read_rds(here::here("data", "b1_strat.rds"))
+lp_df = read_rds(here::here("data", "lp_df.rds"))
+re_df = read_rds(here::here("data", "re_df.rds"))
+fixef_df = read_rds(here::here("data", "fixef_df.rds"))
+
+psu_df = expand_grid(strata = 1:10,
+                     psu = 1:5) %>%
+  mutate(x = paste0(strata, "_", psu))
+
+y_obs = read_rds(here::here("data", "y_obs.rds"))
+mean_df = read_rds(here::here("data", "mean_df_survwts.rds"))
+mean_df_rand = read_rds(here::here("data", "mean_df_survwts_random.rds"))
+```
+
+
+
+
+# Motivation: functional data in large epidemiological studies
+
+
+
+## National Health and Nutrition Examination Survey (NHANES)
+
+![](figs/nhanes.png)
+
+::: {.notes}
+Large, nationally representative survey of over 15,000 ppts every two years
+2011-2014: collected high freq accel data from 7 days, in addition to health, nutrition, etc.
+::: 
+
+
+
+## NHANES
+
+![](figs/g3.png){height="500"}
+
+
+## NHANES: functional data 
+
+```{r mims plot}
+# convert to tidy fnl format 
+# Assuming your minute columns are min_1, min_2, ..., min_1440
+df_tf = mims_sl %>%
+  mutate(
+    # tfd() needs a matrix of the minute columns
+    activity = tfd(as.matrix(select(., starts_with("min_"))), arg = 1:1440)) %>%
+  select(age_cat, gender, activity)
+df_tf |> 
+  group_by(age_cat, gender) |>
+  summarize(mean_mims = mean(activity, na.rm = TRUE)) |>
+  tf_ggplot(aes(tf = mean_mims, color = gender)) +
+  geom_smooth(linewidth = 1) +
+  facet_grid(~age_cat) +
+  scale_color_manual(values = c("#D55E00", "#009E73")) +
+  scale_x_continuous(breaks = seq(0, 1440, 360),
+                     labels = c("00:00", "06:00", "12:00", "18:00", "")) +
+  theme(axis.text.x = element_text(angle = 40, size = 10)) +
+  theme(legend.position = "bottom") +
+  labs(x = "Time of day", y = "Physical activity (MIMS)", color = "Sex")
+
+
+
+```
+
+::: {.notes}
+
+We're statisticians - we want to quantify this difference - we need to fit a model! 
+
+::: 
+
+
+## NHANES: function on scalar regression (FoSR)
+
+<div style="font-size: 115%;">
+
+
+Model: $$\mathbb{E}[\mathrm{PA}_i(s)] = \beta_0(s) + \beta_1(s)\mathbb{I}\{\mathrm{sex}_i=\mathrm{female}\} + \sum_{k=2}^{7}\beta_k(s)\mathbb{I}\{\mathrm{agecat}_i=k\} $$ 
+
+$i$: participant; 
+
+$s \in \{1, \dots, 1440\}$: each minute of the day
+
+
+</div>
+
+::: {.notes}
+Outcome: steps profile over the course of the day (function) 
+
+Predictors: age, sex (scalars)
+
+Interpretation
+  $\beta_0(s)$: expected steps for reference sex category and reference age category
+   Can be interpreted at specific points of the day (e.g., how many more steps do males take at 12pm, holding age constant
+
+:::
+
+## FoSR: model fitting 
+
+::: {.incremental}
+
+<div style="font-size: 150%;">
++ Fast univariate inference (FUI) [@Cui2021]
+
++ Fit separate (univariate) GLM at each point $s$, smooth the resulting point estimates 
+
++ Bootstrap subjects to get confidence bands 
+
+</div>
+
+:::
+
+::: {.notes}
+
+Could also fit with penalized splines
+
+:::
+
+# Gap: no method to adjust for survey design
+
+## NHANES is not a random sample! 
+
+![](figs/nhanes_sample.gif)
+
+Individuals sampled in geographic clusters, minority groups oversampled 
+
+Are estimates from FoSR valid for population-level inference? 
+
+
+
+<div style=" position: absolute; bottom: 0em; right: -4em; font-size: 0.6em; color: #777; "> [NHANES Sample Design Tutorial](https://wwwn.cdc.gov/nchs/nhanes/tutorials/sampledesign.aspx) </div>
+
+# Idea: combine a bunch of existing methods
+
+## Survey function on scalar regression 
+
+<div style="font-size: 135%;">
+
+
+::: {.incremental}
+
++ **No** method exists for function on scalar regression under complex surveys
+
++ Standard regression: well developed methods and software to take into accounts weights and correlation between clusters (e.g. $\texttt{svyglm}$, $\texttt{svycoxph}$) [@surveys] for estimation and inference
+
+
++ FUI built on separate GLMS
+
++ **Idea**: incorporate survey weights into the GLMs (estimation) and use survey-aware replication/bootstrap methods for inference 
+
+:::
+
+</div>
+
+
+
+# Easy enough to implement -- but how do we know if it works? 
+
+## Simulation goal
+
+::: {.incremental}
+
++ Generate a superpopulation of individuals who belong to a stratum and cluster 
++ Each individual has functional outcome and covariate
++ [Optionally] create correlation in functional outcomes within strata and clusters
++ [Optionally] create heterogeneity in covariate effects by strata/cluster
++ Sample from the superpopulation in each iteration of the simulation
+  + [Optionally] allow for informative sampling: probability of being included in sample related to functional outcome 
+
+:::
+
+## Data generating
+
+
+```{r}
+#| cache: true
+btrue_df %>% 
+  mutate(name = factor(name, 
+                       levels = c("(Intercept)", "X"),  # adjust to your actual levels
+                       labels = c("beta[0](s)", "beta[1](s)"))) %>%
+  ggplot(aes(x = s, y = beta, color = name)) + 
+  facet_grid(.~name, labeller = label_parsed) + 
+  geom_line(linewidth = 1.1) + 
+  labs(x = "Functional domain", 
+       y = "Value", 
+       color = "", 
+       title = "Global intercept and slope functions") +
+  theme(legend.position = "none",
+        strip.text = element_text(family = "sans")  # Use default font for Greek
+  ) +
+  scale_color_paletteer_d("ggthemes::colorblind", direction = -1)
+
+```
+
+## Data generating: add stratum-specific covariate effects 
+
+$\beta_{1(h)}(s) = \gamma_h\cdot\beta_1(s)$
+
+Where $\gamma_h \sim N(1, 0.125^2)$
+
+```{r strata specific slopes}
+#| cache: true 
+
+b1_strat_df |> 
+  pivot_longer(cols = -c(strata, scale),
+               names_to = "l", 
+               names_transform = ~as.integer(sub(".*V", "", .x))) %>% 
+  ggplot(aes(x = l, y = value, color = scale, group = strata)) + 
+  geom_line(linewidth = 1) +
+  scale_color_paletteer_c("ggthemes::Red-Gold") +
+  labs(x = "Functional Domain", y = "Value", title = expression(beta[1(h)](s))) +
+  geom_line(data = btrue_df |> filter(name == "X") |> mutate(strata = 1), 
+            aes(x = s, y = beta, linetype = "Global Slope"), 
+            color = "#2B5C8A", linewidth = 1.1, inherit.aes = FALSE) +
+  scale_linetype_manual(
+    name = "", 
+    values = "dashed",
+    labels = expression("Global slope " * beta[1](s))
+  ) +
+  labs(x = "Functional Domain", y = "Value", title = expression(beta[1(h)](s))) +
+  theme(legend.position = c(0.2, 0.7),
+        title = element_text(family = "sans"),
+        legend.text = element_text(family = "sans", size = 14)) +
+  guides(color = "none")
+```
+
+
+## Data generating: induce strata and cluster-level correlation with functional random effects
+
+Generate strata-level ($b_{h(i)}(s)$) and cluster-level ($b_{c(h, i)}(s)$) random effects using B-spline basis 
+
+Individual-level linear predictor: 
+$\eta_i(s) = \beta_0(s) + X_i\beta_{1(h)}(s) + b_{h(i)}(s) + b_{c(h, i)}(s)$
+
+```{r re plot}
+#| cache: true
+re_df |>
+  filter(strata %in% c(1:10),
+         psu %in% psu_df$x) %>%
+  group_by(strata, psu) %>%
+  slice_sample(n = 100) %>%
+  ungroup() %>%
+  pivot_longer(cols = starts_with("V"),
+               names_to = "ind",
+               names_transform = ~as.integer(sub(".*V", "", .x))) %>%
+  mutate(strata = paste0("Stratum ", strata),
+         strata = factor(strata, levels = paste0("Stratum ", seq(1:10)))) %>%
+  ggplot(aes(x = ind, y = value, color = factor(psu))) +
+  geom_smooth(se = FALSE, linewidth = .7) +
+  facet_wrap(~strata, nrow = 2) +
+  labs(x = "Functional Domain", y = "Value", title = "Random effects by stratum and cluster") +
+  theme(legend.position = "none") +
+  scale_color_viridis_d(option = "A")
+```
+
+## Data generating: induce strata and cluster-level correlation with functional random effects
+
+Generate strata-level ($b_{h(i)}(s)$) and cluster-level ($b_{c(h, i)}(s)$) random effects using B-spline basis 
+
+Individual-level linear predictor: 
+$\eta_i(s) = \beta_0(s) + X_i\beta_{1(h)}(s) + b_{h(i)}(s) + b_{c(h, i)}(s)$
+
+```{r fe plot}
+#| cache: true
+fixef_df |>
+  filter(strata %in% c(1:10),
+         psu %in% psu_df$x) %>%
+  group_by(strata, psu) %>%
+  slice_sample(n = 100) %>%
+  ungroup() %>%
+  pivot_longer(cols = starts_with("V"),
+               names_to = "ind",
+               names_transform = ~as.integer(sub(".*V", "", .x))) %>%
+  mutate(strata = paste0("Stratum ", strata),
+         strata = factor(strata, levels = paste0("Stratum ", seq(1:10)))) %>%
+  ggplot(aes(x = ind, y = value, color = factor(psu))) +
+  geom_smooth(se = FALSE, linewidth = .7) +
+  facet_wrap(~strata, nrow = 2) +
+  labs(x = "Functional Domain", y = "Value", title = "Fixed effects by stratum and cluster") +
+  theme(legend.position = "none") +
+  scale_color_viridis_d(option = "A")
+```
+
+## Data generating: induce strata and cluster-level correlation with functional random effects
+
+Generate strata-level ($b_{h(i)}(s)$) and cluster-level ($b_{c(h, i)}(s)$) random effects using B-spline basis 
+
+Individual-level linear predictor: 
+$\eta_i(s) = \beta_0(s) + X_i\beta_{1(h)}(s) + b_{h(i)}(s) + b_{c(h, i)}(s)$
+
+```{r lp plot}
+#| cache: true
+lp_df |>
+  filter(strata %in% c(1:10),
+         psu %in% psu_df$x) %>%
+  group_by(strata, psu) %>%
+  slice_sample(n = 100) %>%
+  ungroup() %>%
+  pivot_longer(cols = starts_with("V"),
+               names_to = "ind",
+               names_transform = ~as.integer(sub(".*V", "", .x))) %>%
+  mutate(strata = paste0("Stratum ", strata),
+         strata = factor(strata, levels = paste0("Stratum ", seq(1:10)))) %>%
+  ggplot(aes(x = ind, y = value, color = factor(psu))) +
+  geom_smooth(se = FALSE, linewidth = .7) +
+  facet_wrap(~strata, nrow = 2) +
+  labs(x = "Functional Domain", y = "Value", title = "Smoothed linear predictors by stratum and cluster") +
+  theme(legend.position = "none") +
+  scale_color_viridis_d(option = "A")
+
+```
+
+## Data generating: get functional outcomes from linear predictors
+
+$Y_i(s)$ sampled from $\mathcal{N}(\eta_i(s), \sigma^2)$
+
+```{r plot y}
+#| cache: true
+y_obs |> 
+  group_by(strata, psu) %>% 
+  slice_sample(n = 100) %>% 
+  ungroup() %>% 
+  pivot_longer(cols = starts_with("V"),
+               names_to = "ind", 
+               names_transform = ~as.integer(sub(".*V", "", .x))) %>% 
+  mutate(strata = paste0("Stratum ", strata),
+         strata = factor(strata, levels = paste0("Stratum ", seq(1:10)))) %>% 
+  ggplot(aes(x = ind, y = value, color = factor(psu))) + 
+  facet_wrap(~strata, nrow = 2) + 
+  geom_smooth(se = FALSE, linewidth = 0.7) + 
+  labs(x = "Functional Domain", y = "Value", title = "Mean smoothed outcomes by stratum and cluster") + 
+  theme(legend.position = "none") +
+  scale_color_viridis_d(option = "A")
+```
+
+## Survey sampling: sample individuals from superpopulation 
+1. Sample 2 clusters from each stratum
+2. Sample individuals from each cluster 
+3. Informative sampling: allow selection probability to depend on functional outcome: $\pi_i \propto \frac{1}{L}\sum_{s=1}^LY_i(s)$
+
+```{r plot surv wts}
+#| cache: true
+mean_df %>%
+  ggplot() +
+  geom_spaghetti(aes(y = Y_mean_strat, color = quant), linewidth = 2, alpha = 1) +
+  scale_color_manual(name = "Selection probability tertile",
+                     values = c("#FF2A00FF", "#FFEE99FF", "#002AFFFF"),
+                     labels = c("Highest third", "Middle third", "Lowest third")) +
+  labs(x = "Functional domain", y = "Smoothed functional outcome", title = "Selection probability and functional outcomes under informative sampling") 
+```
+
+## Survey sampling: sample individuals from superpopulation 
+1. Sample 2 clusters from each stratum
+2. Sample individuals from each cluster 
+3. Informative sampling: allow selection probability to depend on functional outcome: $\pi_i \propto \frac{1}{L}\sum_{s=1}^LY_i(s)$
+
+```{r plot surv wts random}
+#| cache: true
+mean_df_rand %>%
+  ggplot() +
+  geom_spaghetti(aes(y = Y_mean_strat, color = quant), linewidth = 2, alpha = 1) +
+  scale_color_manual(name = "Selection probability tertile",
+                     values = c("#FF2A00FF", "#FFEE99FF", "#002AFFFF"),
+                     labels = c("Highest third", "Middle third", "Lowest third")) +
+  labs(x = "Functional domain", y = "Smoothed functional outcome", title = "Selection probability and functional outcomes under random sampling") 
+```
+
+
+## Results: when does it matter? 
+
+## Computational considerations
+
+## Next steps 
+
+
+
+
