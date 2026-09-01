@@ -49,6 +49,7 @@ library(scales)
 library(ggplot2)
 library(ggrepel)
 library(broom)
+library(gganimate)
 library(mgcv)
 library(survival)
 library(ggimage)
@@ -92,6 +93,7 @@ scale_fill_okabe  <- function(...) scale_fill_manual(values = okabe_ito, ...)
 
 
 ```{r read in data}
+#| cache: true
 covars = read_rds(here::here("data", "covariates_accel_mortality_df.rds"))
 mims_sl = read_rds(here::here("data", "mims_covariates.rds"))
 # add age cat
@@ -114,7 +116,8 @@ y_obs = read_rds(here::here("data", "y_obs.rds"))
 mean_df = read_rds(here::here("data", "mean_df_survwts.rds"))
 mean_df_rand = read_rds(here::here("data", "mean_df_survwts_random.rds"))
 male_vec = read_rds(here::here("data", "male_effect_pw.rds"))
-
+boots = read_rds(here::here("data", "bootstrap_coefs.rds"))
+plt_df = read_rds(here::here("data", "model_fit_plt.rds"))
 ```
 
 
@@ -137,12 +140,13 @@ Large, nationally representative survey of over 15,000 ppts every two years
 
 ## NHANES
 
-![](figs/g3.png){height="500"}
+![](figs/g3.png){height="800"}
 
 
 ## NHANES: functional data 
 
 ```{r mims plot}
+#| cache: true
 # convert to tidy fnl format 
 # Assuming your minute columns are min_1, min_2, ..., min_1440
 df_tf = mims_sl %>%
@@ -230,11 +234,11 @@ Individuals sampled in geographic clusters, minority groups oversampled
 
 Are estimates from FoSR valid for population-level inference? 
 
+**No** method exists for function on scalar regression under complex surveys
 
+<div style=" position: absolute; bottom: -1em; right: -4em; font-size: 0.6em; color: #777; "> [NHANES Sample Design Tutorial](https://wwwn.cdc.gov/nchs/nhanes/tutorials/sampledesign.aspx) </div>
 
-<div style=" position: absolute; bottom: 0em; right: -4em; font-size: 0.6em; color: #777; "> [NHANES Sample Design Tutorial](https://wwwn.cdc.gov/nchs/nhanes/tutorials/sampledesign.aspx) </div>
-
-# Idea: combine a bunch of existing methods
+# What if we combine some existing methods? 
 
 ## Survey function on scalar regression 
 
@@ -243,18 +247,214 @@ Are estimates from FoSR valid for population-level inference?
 
 ::: {.incremental}
 
-+ **No** method exists for function on scalar regression under complex surveys
-
-+ Standard regression: well developed methods and software to take into accounts weights and correlation between clusters (e.g. $\texttt{svyglm}$, $\texttt{svycoxph}$) [@surveys] for estimation and inference
 
 
-+ FUI built on separate GLMS
++ Standard regression: we have methods and software to take into accounts weights and correlation between clusters (e.g. $\texttt{svyglm}$, $\texttt{svycoxph}$) [@surveys] for estimation and inference
+
+
++ FUI is built on separate GLMS
 
 + **Idea**: incorporate survey weights into the GLMs (estimation) and use survey-aware replication/bootstrap methods for inference 
 
 :::
 
 </div>
+
+# Implementation
+
+## Fit survey-weighted GLM at each point along the functional domain 
+
+
+
+```{r mimsex1}
+#| cache: true 
+set.seed(2213)
+mims_small = 
+  mims_sl |> 
+  slice_sample(n = 5)
+
+# y_obs |> 
+#   slice(1:5) |> 
+#   mutate(id = row_number()) |> 
+#   pivot_longer(cols = -c(id, psu, strata)) |> 
+#   mutate(s = as.numeric(sub(".*V", "", name))) |> 
+#   ggplot(aes(x = s, y = value, color = factor(id))) +
+#   geom_point() +
+#   scale_color_paletteer_d("ggthemes::colorblind", name = "Individual") +
+#   labs(x = "Functional Domain", y = "Outcome") +
+#   annotate(geom = "rect", xmin = 0.5, xmax = 1.5, ymin = -1, ymax= 0.5, fill = NA, color = "#FF2A00FF")
+
+mims_small |> 
+  pivot_longer(cols = starts_with("min")) |> 
+  mutate(s = as.numeric(sub(".*min\\_", "", name))) |> 
+  ggplot(aes(x = s, y = value, color = factor(SEQN))) +
+  geom_point(size = .3, alpha = .5) +
+  scale_color_paletteer_d("ggthemes::colorblind", name = "Individual") +
+  labs(x = "Time of Day", y = "MIMS") +
+  annotate(geom = "rect", xmin = 0.5, xmax = 1.5, ymin = 0, ymax= 40, fill = "#FF2A00FF") +
+  theme(legend.position = "bottom") + 
+  guides(color = guide_legend(override.aes = list(size = 2, alpha = 1))) +
+    scale_x_continuous(breaks = seq(0, 1440, 240),
+                       labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00"))
+```
+
+## Fit survey-weighted GLM at each point along the functional domain 
+
+```{r anim}
+#| cache: true
+rect_data = tibble(
+  frame = 1:1440,
+  xmin = seq(0.5, 1439.5, by = 1),
+  xmax = seq(1.5, 1440.5, by = 1)
+)
+
+p <- mims_small |> 
+  pivot_longer(cols = starts_with("min")) |> 
+  mutate(s = as.numeric(sub(".*min\\_", "", name))) |> 
+  ggplot(aes(x = s, y = value, color = factor(SEQN))) +
+  geom_point(size = .3, alpha = .5) +
+  scale_color_paletteer_d("ggthemes::colorblind", name = "") +
+  geom_rect(data = rect_data, 
+            aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = 40, group = frame),
+            fill = "#FF2A00FF", alpha = 0.5, inherit.aes = FALSE) +
+  labs(x = "Time of Day", y = "MIMS", color = "") +
+  theme(legend.position = "bottom",
+        legend.box.margin = margin(t = 25),  # Space above legend
+    plot.margin = margin(20, 20, 30, 30),  # Much more bottom margin
+    axis.title.x = element_text(margin = margin(t = 15)),  # Space above x-axis title
+    axis.title.y = element_text(margin = margin(r = 40)),
+    legend.key.width = unit(1.5, "cm"),   # Wider legend keys
+    legend.key.height = unit(0.8, "cm"),  # Taller legend keys
+    legend.text = element_text(margin = margin(r = 10)),  # Space between items
+    legend.spacing.x = unit(0.2, "cm"),   # Horizontal spacing between legend items
+    legend.spacing.y = unit(0.3, "cm")    # Vertical spacing between rows)   # Space right of y-axis title
+  ) + 
+  guides(color = guide_legend(override.aes = list(size = 2, alpha = 1)),
+         nrow = 1,
+        keywidth = unit(0.5, "cm"),  # Smaller key boxes
+        keyheight = unit(0.5, "cm")) +
+  scale_x_continuous(breaks = seq(0, 1440, 240),
+                     labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  transition_states(frame, transition_length = 1, state_length = 0)
+
+animate(p, end_pause = 2)
+
+```
+
+
+## Point estimates
+ 
+
+```{r pwests}
+#| cache: true
+male_vec |> 
+  as_tibble() |> 
+  mutate(s = row_number()) |> 
+  ggplot(aes(x = s, y = value)) +
+  geom_point(size = .3, alpha = .5) +
+  scale_x_continuous(breaks = seq(0, 1440, 240),
+                       labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females", 
+       title = "Estimates from pointwise regressions")
+```
+
+## Smoothed point estimates
+
+```{r smoothed}
+#| cache: true
+male_vec |> 
+  as_tibble() |> 
+  mutate(s = row_number()) |> 
+  ggplot(aes(x = s, y = value)) +
+  geom_point(size = .3, alpha = .5) +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "tp", k = 21), 
+              color = "#2B5C8A", se = FALSE) +
+  scale_x_continuous(breaks = seq(0, 1440, 240),
+                       labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females", 
+       title = "Estimates from pointwise regressions")
+```
+
+## What about inference? 
+
+Can't use the standard errors from weighted GLMs because: 
+(1) don't take into account correlation between strata/clusters
+(2) don't take into account correlation across the functional domain 
+
+## Inference: survey-aware replication methods 
+
+Use balanced repeated replication (BRR) [@BRR] to obtain $B$ sets of survey weights, fit model on each set to get replicates
+
+```{r boots}
+#| cache: true 
+
+mdf = 
+  male_vec |> 
+  as_tibble() |> 
+  mutate(s = row_number())
+
+
+boots[,1:10] |>
+  as_tibble() |>
+  mutate(s = row_number()) |>
+  pivot_longer(cols = -s) |>
+  mutate(name = as.numeric(sub(".*V", "", name))) |>
+  ggplot(aes(x = s, y = value, color = factor(name))) +
+  geom_point(size = .3, alpha = .1) +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "tp", k = 21), se = FALSE) +
+  scale_x_continuous(breaks = seq(0, 1440, 240),
+                     labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females",
+       title = "Bootstraped coefficient functions") +
+  scale_color_viridis_d(option = "A", name = "Bootstrap replicate") +
+  theme(legend.position = "bottom") +
+  guides(color = guide_legend(nrow = 1)) +
+  geom_smooth(data = mdf, inherit.aes = FALSE, aes(x = s, y = value, linetype = "Original estimate"),
+              method = "gam", formula = y ~ s(x, bs = "tp", k = 21), se = FALSE, 
+              color = "#2B5C8A") +
+  scale_linetype_manual(values = c("Original estimate" = "dashed"), name = "")
+
+```
+
+## Inference: survey-aware replication methods 
+
+From $B$ bootstrapped functions, get pointwise variance (diagonal of empirical variance matrix)
+
+Get CMA CIs (figure out how to explain)
+
+## Inference: survey-aware replication methods 
+
+```{r final res}
+#| cache: true 
+
+plt_df = 
+  plt_df |>
+  mutate(var_name = factor(var_name, labels = c("Intercept", "Male"))) 
+plt_df |> 
+  ggplot(aes(x = l, y = beta_hat)) +
+  facet_wrap(.~var_name, scales = "free_y") +
+  geom_ribbon(aes(x = l, ymin = lower_pw, ymax = upper_pw, fill = "Pointwise"), alpha = .5) +
+  geom_ribbon(aes(x = l, ymin = lower_joint, ymax = upper_joint, fill = "Joint"), alpha = 0.3) +
+  geom_line(linewidth = 1.1)  +
+  labs(x = "Functional Domain", y = "Coefficient Estimate") +
+  scale_fill_manual(values = c("Joint" = "#56B4E9", "Pointwise" =  "#0072B2"), name = "Confidence Interval") +
+  scale_x_continuous(breaks = seq(0, 1440, 240),
+                     labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  geom_hline(data = plt_df |> filter(var_name == "Male"),
+             aes(yintercept = 0), col = "slategrey", linetype = 2) +
+  theme(legend.position = "bottom")
+
+```
+
+# Simulation results
+
+# Application 
+
+
+## Next steps 
+
+
+
 
 
 
@@ -468,142 +668,5 @@ mean_df_rand %>%
                      labels = c("Highest third", "Middle third", "Lowest third")) +
   labs(x = "Functional domain", y = "Smoothed functional outcome", title = "Selection probability and functional outcomes under random sampling") 
 ```
-
-
-# Implementation
-
-## Fit survey-weighted GLM at each point along the functional domain 
-
-
-
-```{r mimsex1}
-#| cache: true 
-set.seed(2213)
-mims_small = 
-  mims_sl |> 
-  slice_sample(n = 5)
-
-# y_obs |> 
-#   slice(1:5) |> 
-#   mutate(id = row_number()) |> 
-#   pivot_longer(cols = -c(id, psu, strata)) |> 
-#   mutate(s = as.numeric(sub(".*V", "", name))) |> 
-#   ggplot(aes(x = s, y = value, color = factor(id))) +
-#   geom_point() +
-#   scale_color_paletteer_d("ggthemes::colorblind", name = "Individual") +
-#   labs(x = "Functional Domain", y = "Outcome") +
-#   annotate(geom = "rect", xmin = 0.5, xmax = 1.5, ymin = -1, ymax= 0.5, fill = NA, color = "#FF2A00FF")
-
-mims_small |> 
-  pivot_longer(cols = starts_with("min")) |> 
-  mutate(s = as.numeric(sub(".*min\\_", "", name))) |> 
-  ggplot(aes(x = s, y = value, color = factor(SEQN))) +
-  geom_point(size = .3, alpha = .5) +
-  scale_color_paletteer_d("ggthemes::colorblind", name = "Individual") +
-  labs(x = "Time of Day", y = "MIMS") +
-  annotate(geom = "rect", xmin = 0.5, xmax = 1.5, ymin = 0, ymax= 40, fill = "#FF2A00FF") +
-  theme(legend.position = "bottom") + 
-  guides(color = guide_legend(override.aes = list(size = 2, alpha = 1))) +
-    scale_x_continuous(breaks = seq(0, 1440, 240),
-                       labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00"))
-```
-
-## Fit survey-weighted GLM at each point along the functional domain 
-
-
-
-```{r mimsex2}
-#| cache: true 
-
-
-mims_small |> 
-  pivot_longer(cols = starts_with("min")) |> 
-  mutate(s = as.numeric(sub(".*min\\_", "", name))) |> 
-  ggplot(aes(x = s, y = value, color = factor(SEQN))) +
-  geom_point(size = .3, alpha = .5) +
-  scale_color_paletteer_d("ggthemes::colorblind", name = "Individual") +
-  labs(x = "Time of Day", y = "MIMS") +
-  annotate(geom = "rect", xmin = 1.5, xmax = 2.5, ymin = 0, ymax= 40, fill = "#FF2A00FF") +
-  theme(legend.position = "bottom") + 
-  guides(color = guide_legend(override.aes = list(size = 2, alpha = 1))) +
-    scale_x_continuous(breaks = seq(0, 1440, 240),
-                       labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00"))
-
-```
-
-## Fit survey-weighted GLM at each point along the functional domain 
-
-
-
-```{r mimsex3}
-#| cache: true 
-
-
-mims_small |> 
-  pivot_longer(cols = starts_with("min")) |> 
-  mutate(s = as.numeric(sub(".*min\\_", "", name))) |> 
-  ggplot(aes(x = s, y = value, color = factor(SEQN))) +
-  geom_point(size = .3, alpha = .5) +
-  scale_color_paletteer_d("ggthemes::colorblind", name = "Individual") +
-  labs(x = "Time of Day", y = "MIMS") +
-  annotate(geom = "rect", xmin = 1439.5, xmax = 1440.5, ymin = 0, ymax= 40, fill = "#FF2A00FF") +
-  theme(legend.position = "bottom") + 
-  guides(color = guide_legend(override.aes = list(size = 2, alpha = 1))) +
-    scale_x_continuous(breaks = seq(0, 1440, 240),
-                       labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00"))
-```
-
-## Point estimates
- 
-
-```{r pwests}
-#| cache: true
-male_vec |> 
-  as_tibble() |> 
-  mutate(s = row_number()) |> 
-  ggplot(aes(x = s, y = value)) +
-  geom_point(size = .3, alpha = .5) +
-  scale_x_continuous(breaks = seq(0, 1440, 240),
-                       labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
-  labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females", 
-       title = "Estimates from pointwise regressions")
-```
-
-## Smoothed point estimates
-
-```{r smoothed}
-#| cache: true
-male_vec |> 
-  as_tibble() |> 
-  mutate(s = row_number()) |> 
-  ggplot(aes(x = s, y = value)) +
-  geom_point(size = .3, alpha = .5) +
-  geom_smooth(method = "gam", formula = y ~ s(x, bs = "tp", k = 21), 
-              color = "#2B5C8A") +
-  scale_x_continuous(breaks = seq(0, 1440, 240),
-                       labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
-  labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females", 
-       title = "Estimates from pointwise regressions")
-```
-
-## What about inference? 
-
-+ Can't use the standard errors from weighted GLMs because: 
-(1) don't take into account correlation between strata/clusters
-(2) don't take into account correlation across the functional domain 
-
-## Inference: survey-aware replication methods 
-+ Balanced repeated replication (BRR)
-
-```{r}
-# plot w a bunch of bootstrap replicates 
-
-```
-
-## Computational considerations
-
-## Next steps 
-
-
 
 
