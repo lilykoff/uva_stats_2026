@@ -50,11 +50,27 @@ model_fit = svyfosr::svyfui(mims_mat ~ gender + age_cat,
                             nknots_min_fpca = 35,
                             n_cores = parallelly::availableCores() - 1,
                             seed = 2213)
+write_rds(model_fit, here::here("data", "model_fit.rds"))
+
 
 model_fit$boots |> dim()
+var(t(model_fit$boots[2, ,])) |> diag() |> unname()
+betaHat_boot <- array(NA, dim = c(8, 1440, 100))
+
+mfb = model_fit$boots
+argvals = 1:1440
+B = 100
+# smooth the bootstraps
+for (b in 1:B) {
+  betaHat_boot[, , b] <- t(apply(mfb[, , b], 1, function(x) mgcv::gam(x ~ s(argvals, bs = "tp", k = 21), method = "GCV.Cp")$fitted.values))
+}
+
+var_smooth = var(t(betaHat_boot[2, ,])) |> diag() |> unname()
+
+write_rds(var_smooth, here::here("data", "var_smooth.rds"))
 
 # extract boots for gender
-
+dim(model_fit$boots[2, ,])
 boots = model_fit$boots[2, , ]
 
 write_rds(boots, here::here("data", "bootstrap_coefs.rds"))

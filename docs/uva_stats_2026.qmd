@@ -118,6 +118,39 @@ mean_df_rand = read_rds(here::here("data", "mean_df_survwts_random.rds"))
 male_vec = read_rds(here::here("data", "male_effect_pw.rds"))
 boots = read_rds(here::here("data", "bootstrap_coefs.rds"))
 plt_df = read_rds(here::here("data", "model_fit_plt.rds"))
+var_smooth = read_rds(here::here("data", "var_smooth.rds"))
+
+model = read_rds(here::here("data", "model_fit.rds"))
+res = read_rds(here::here("data", "survey_res.rds"))
+
+set.seed(2025)
+mims_small = 
+  mims_sl |> 
+  slice_sample(n = 8)
+
+mdf = 
+  male_vec |> 
+  as_tibble() |> 
+  mutate(s = row_number())
+boot_df = 
+  boots |>
+  as_tibble() |>
+  mutate(s = row_number()) |>
+  pivot_longer(cols = -s) |>
+  mutate(name = as.numeric(sub(".*V", "", name)))
+
+smoothed_points = boot_df %>%
+  group_by(name) %>%
+  reframe({
+    fit <- gam(value ~ s(s, bs = "tp", k = 21))
+    tibble(
+      s = s,
+      value = value,
+      smoothed = fitted(fit)
+    )
+  }) %>%
+  filter(s == 1)
+
 ```
 
 
@@ -140,10 +173,58 @@ Large, nationally representative survey of over 15,000 ppts every two years
 
 ## NHANES
 
-![](figs/g3.png){height="800"}
+![](figs/g3.png){height="700"}
+
+## Accelerometer-measured physical activity 
+
+```{r pa plot}
+#| cache: true 
+df_plt = 
+  mims_small %>% 
+  mutate(
+    # tfd() needs a matrix of the minute columns
+    activity = tfd(as.matrix(select(., starts_with("min_"))), arg = 1:1440)) %>%
+  select(age_cat, gender, activity, SEQN)
+
+df_plt |> 
+  ggplot(aes(y = activity, color = factor(SEQN))) +
+  geom_spaghetti(alpha = 0.8) +
+  scale_color_paletteer_d("ggthemes::colorblind", labels = as.character(seq(1, 8, 1)),
+        name = "Participant") +
+  scale_x_continuous(breaks = seq(0, 1440, 240),
+                     labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  theme(legend.position = "bottom") +
+  labs(x = "Time of day", y = "Physical activity (MIMS)", title = "Physical Activity Patterns for 10 NHANES Participants") +
+  guides(color = guide_legend(nrow = 1)) 
+
+```
+
+## Accelerometer-measured physical activity 
 
 
-## NHANES: functional data 
+```{r}
+#| cache: true 
+
+df_plt |> 
+  tf_ggplot(aes(tf = activity, color = SEQN)) +
+  geom_smooth(linewidth = 1, se = FALSE, method = "gam", formula = y ~ s(x, bs = "tp")) + 
+   scale_color_paletteer_d("ggthemes::colorblind", labels = as.character(seq(1, 8, 1)),
+        name = "Participant") +
+  scale_x_continuous(breaks = seq(0, 1440, 240),
+                     labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  theme(legend.position = "bottom") +
+  labs(x = "Time of day", y = "Physical activity (MIMS)", title = "Smoothed Physical Activity Patterns for 10 NHANES Participants") +
+  guides(color = guide_legend(nrow = 1))
+
+
+```
+
+::: {.notes}
+Natural to ask: are there differences between men and women, e.g.
+::: 
+
+
+## Accelerometer-measured physical activity 
 
 ```{r mims plot}
 #| cache: true
@@ -178,7 +259,7 @@ We're statisticians - we want to quantify this difference - we need to fit a mod
 ::: 
 
 
-## NHANES: function on scalar regression (FoSR)
+## Function on scalar regression (FoSR)
 
 <div style="font-size: 115%;">
 
@@ -236,7 +317,7 @@ Are estimates from FoSR valid for population-level inference?
 
 **No** method exists for function on scalar regression under complex surveys
 
-<div style=" position: absolute; bottom: -1em; right: -4em; font-size: 0.6em; color: #777; "> [NHANES Sample Design Tutorial](https://wwwn.cdc.gov/nchs/nhanes/tutorials/sampledesign.aspx) </div>
+<div style=" position: absolute; bottom: -1em; left: 10em; font-size: 0.6em; color: #777; "> [NHANES Sample Design Tutorial](https://wwwn.cdc.gov/nchs/nhanes/tutorials/sampledesign.aspx) </div>
 
 # What if we combine some existing methods? 
 
@@ -268,32 +349,19 @@ Are estimates from FoSR valid for population-level inference?
 
 ```{r mimsex1}
 #| cache: true 
-set.seed(2213)
-mims_small = 
-  mims_sl |> 
-  slice_sample(n = 5)
 
-# y_obs |> 
-#   slice(1:5) |> 
-#   mutate(id = row_number()) |> 
-#   pivot_longer(cols = -c(id, psu, strata)) |> 
-#   mutate(s = as.numeric(sub(".*V", "", name))) |> 
-#   ggplot(aes(x = s, y = value, color = factor(id))) +
-#   geom_point() +
-#   scale_color_paletteer_d("ggthemes::colorblind", name = "Individual") +
-#   labs(x = "Functional Domain", y = "Outcome") +
-#   annotate(geom = "rect", xmin = 0.5, xmax = 1.5, ymin = -1, ymax= 0.5, fill = NA, color = "#FF2A00FF")
 
 mims_small |> 
   pivot_longer(cols = starts_with("min")) |> 
   mutate(s = as.numeric(sub(".*min\\_", "", name))) |> 
-  ggplot(aes(x = s, y = value, color = factor(SEQN))) +
+  ggplot(aes(x = s, y = value, color = SEQN)) +
   geom_point(size = .3, alpha = .5) +
-  scale_color_paletteer_d("ggthemes::colorblind", name = "Individual") +
+  scale_color_paletteer_d("ggthemes::colorblind", name = "Individual",
+                          labels = as.character(seq(1, 8, 1))) +
   labs(x = "Time of Day", y = "MIMS") +
-  annotate(geom = "rect", xmin = 0.5, xmax = 1.5, ymin = 0, ymax= 40, fill = "#FF2A00FF") +
+  annotate(geom = "rect", xmin = 0.5, xmax = 1.5, ymin = 0, ymax= 60, fill = "#FF2A00FF") +
   theme(legend.position = "bottom") + 
-  guides(color = guide_legend(override.aes = list(size = 2, alpha = 1))) +
+  guides(color = guide_legend(override.aes = list(size = 2, alpha = 1), nrow = 1)) +
     scale_x_continuous(breaks = seq(0, 1440, 240),
                        labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00"))
 ```
@@ -311,14 +379,15 @@ rect_data = tibble(
 p <- mims_small |> 
   pivot_longer(cols = starts_with("min")) |> 
   mutate(s = as.numeric(sub(".*min\\_", "", name))) |> 
-  ggplot(aes(x = s, y = value, color = factor(SEQN))) +
+  ggplot(aes(x = s, y = value, color = SEQN)) +
   geom_point(size = .3, alpha = .5) +
-  scale_color_paletteer_d("ggthemes::colorblind", name = "") +
+  scale_color_paletteer_d("ggthemes::colorblind", name = "",
+                          labels = as.character(seq(1, 8, 1))) +
   geom_rect(data = rect_data, 
-            aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = 40, group = frame),
+            aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = 60, group = frame),
             fill = "#FF2A00FF", alpha = 0.5, inherit.aes = FALSE) +
   labs(x = "Time of Day", y = "MIMS", color = "") +
-  theme(legend.position = "bottom",
+  theme(legend.position = "bottom ",
         legend.box.margin = margin(t = 25),  # Space above legend
     plot.margin = margin(20, 20, 30, 30),  # Much more bottom margin
     axis.title.x = element_text(margin = margin(t = 15)),  # Space above x-axis title
@@ -329,15 +398,15 @@ p <- mims_small |>
     legend.spacing.x = unit(0.2, "cm"),   # Horizontal spacing between legend items
     legend.spacing.y = unit(0.3, "cm")    # Vertical spacing between rows)   # Space right of y-axis title
   ) + 
-  guides(color = guide_legend(override.aes = list(size = 2, alpha = 1)),
-         nrow = 1,
+  guides(color = guide_legend(override.aes = list(size = 2, alpha = 1),
+        nrow = 1,
         keywidth = unit(0.5, "cm"),  # Smaller key boxes
-        keyheight = unit(0.5, "cm")) +
+        keyheight = unit(0.5, "cm"))) +
   scale_x_continuous(breaks = seq(0, 1440, 240),
                      labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
   transition_states(frame, transition_length = 1, state_length = 0)
 
-animate(p, end_pause = 2)
+animate(p, end_pause = 10)
 
 ```
 
@@ -367,8 +436,8 @@ male_vec |>
   mutate(s = row_number()) |> 
   ggplot(aes(x = s, y = value)) +
   geom_point(size = .3, alpha = .5) +
-  geom_smooth(method = "gam", formula = y ~ s(x, bs = "tp", k = 21), 
-              color = "#2B5C8A", se = FALSE) +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "tp", k = 20), 
+              color = "black", se = FALSE) +
   scale_x_continuous(breaks = seq(0, 1440, 240),
                        labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
   labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females", 
@@ -385,28 +454,72 @@ Can't use the standard errors from weighted GLMs because:
 
 Use balanced repeated replication (BRR) [@BRR] to obtain $B$ sets of survey weights, fit model on each set to get replicates
 
+```{r brr vis}
+#| cache: true 
+
+sample_structure = tibble(
+  sample_type = rep(c("Full Sample", "Replicate 1", "Replicate 2", "Replicate 3", "Replicate 4", "Replicate B"), each = 4),
+  stratum = rep(1:4, 6),
+  unit1 = rep(TRUE, 24),
+  unit2 = rep(TRUE, 24)) |> 
+  mutate(
+    unit1 = case_when(
+      sample_type == "Replicate 1" ~ FALSE,
+      sample_type == "Replicate 2" ~ stratum %in% c(2, 4),
+      sample_type == "Replicate 3" ~ stratum %in% c(3, 4),
+      sample_type == "Replicate 4" ~ stratum %in% c(2, 3),
+      sample_type == "Full Sample" ~ TRUE,
+      sample_type == "Replicate B" ~ TRUE
+    ),
+    unit2 = case_when(
+      sample_type == "Replicate 1" ~ TRUE,
+      sample_type == "Replicate 2" ~ stratum %in% c(1, 3),
+      sample_type == "Replicate 3" ~ stratum %in% c(1, 2),
+      sample_type == "Replicate 4" ~ stratum %in% c(1, 4),
+      sample_type == "Full Sample" ~ TRUE,
+      sample_type == "Replicate B" ~ FALSE
+    )
+  ) %>%
+  pivot_longer(cols = starts_with("unit"), names_to = "unit", values_to = "included")
+
+ggplot(sample_structure %>% filter(included), 
+       aes(x = unit, y = factor(stratum), fill = unit)) +
+  geom_tile(color = "#f6f5f3", linewidth = 1) +
+  facet_wrap(~sample_type, ncol = 6) +
+  scale_fill_manual(values = c("unit1" = "#0072B2FF", "unit2" = "#D55E00FF"),
+                    labels = c("Unit 1", "Unit 2")) +
+  scale_x_discrete(labels = c("1", "2")) +
+  labs(title = "Balanced Repeated Replication Schematic",
+       y = "Stratum", x = "Cluster", fill = "Cluster") +
+  theme(legend.position = "none", 
+        panel.grid = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+```
+
+
+## Inference: survey-aware replication methods 
+
+$B$ BRR replicates 
+
 ```{r boots}
 #| cache: true 
 
-mdf = 
-  male_vec |> 
-  as_tibble() |> 
-  mutate(s = row_number())
-
-
-boots[,1:10] |>
+p_old = 
+  boots[,1:10] |>
   as_tibble() |>
   mutate(s = row_number()) |>
   pivot_longer(cols = -s) |>
   mutate(name = as.numeric(sub(".*V", "", name))) |>
   ggplot(aes(x = s, y = value, color = factor(name))) +
   geom_point(size = .3, alpha = .1) +
-  geom_smooth(method = "gam", formula = y ~ s(x, bs = "tp", k = 21), se = FALSE) +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "tp", k = 21), se = FALSE, alpha = 0.7) +
   scale_x_continuous(breaks = seq(0, 1440, 240),
                      labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
   labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females",
-       title = "Bootstraped coefficient functions") +
-  scale_color_viridis_d(option = "A", name = "Bootstrap replicate") +
+       title = "Coefficient function replicates") +
+  scale_color_viridis_d(option = "A", name = "BRR replicate") +
   theme(legend.position = "bottom") +
   guides(color = guide_legend(nrow = 1)) +
   geom_smooth(data = mdf, inherit.aes = FALSE, aes(x = s, y = value, linetype = "Original estimate"),
@@ -414,15 +527,177 @@ boots[,1:10] |>
               color = "#2B5C8A") +
   scale_linetype_manual(values = c("Original estimate" = "dashed"), name = "")
 
+boot_df |>
+  ggplot(aes(x = s, y = value, group = name)) +
+  geom_smooth(
+    method = "gam",
+    formula = y ~ s(x, bs = "tp", k = 21),
+    se = FALSE,
+    alpha = 0.2,
+    linewidth = .1,
+    color = "slategrey"
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 1440, 240),
+    labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")
+  ) +
+  labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females", title = "Coefficient function replicates") +
+  theme(legend.position = "bottom") +
+  geom_smooth(
+    data = mdf,
+    inherit.aes = FALSE,
+    aes(x = s, y = value,),
+    method = "gam",
+    formula = y ~ s(x, bs = "tp", k = 21),
+    se = FALSE,
+    color = "black"
+  ) +
+  scale_y_continuous(limits = c(-2, 1.1))
+### Fix 
 ```
 
 ## Inference: survey-aware replication methods 
 
-From $B$ bootstrapped functions, get pointwise variance (diagonal of empirical variance matrix)
+From $B$ BRR replicates, get pointwise variance
 
-Get CMA CIs (figure out how to explain)
+```{r show pw variance}
+#| cache: true 
+
+boot_df |>
+  ggplot(aes(x = s, y = value, group = name)) +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "tp", k = 21), se = FALSE, alpha = 0.2, linewidth = .1, color = "slategrey") +
+  scale_x_continuous(breaks = seq(0, 1440, 240),
+                     labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females",
+       title = "Coefficient function replicates") +
+  theme(legend.position = "bottom") +
+  geom_smooth(data = mdf, inherit.aes = FALSE, aes(x = s, y = value),
+              method = "gam", formula = y ~ s(x, bs = "tp", k = 21), se = FALSE, 
+              color = "black") +
+  scale_linetype_manual(values = c("Original estimate" = "dashed"), name = "") +
+  geom_point(data = smoothed_points, aes(x = s, y = smoothed), 
+             inherit.aes = FALSE, size = .5) +
+  annotate(geom = "label", color = "#FF2A00FF",
+           label = "Estimate variance at each point from B replicates",
+           x = 60, y = -1, hjust = 0) +
+  annotate(geom = "curve", 
+           x = 60, xend = 1,           
+           y = -.9, yend = median(smoothed_points$smoothed),  
+           curvature = 0.3,
+           arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+           color = "#FF2A00FF",
+           linewidth = 0.7) +
+    scale_y_continuous(limits = c(-2, 1.1))
+
+```
 
 ## Inference: survey-aware replication methods 
+
+From $B$ replicates, get pointwise variance
+
+```{r ci vis}
+#| cache: true 
+
+
+male_vec = unname(male_vec)
+fit = gam(male_vec ~ s(seq_along(male_vec), bs = "tp", k = 20), method = "GCV.Cp")
+
+male_smooth = fitted(fit)
+
+male_smooth |> 
+  as_tibble() |> 
+  mutate(s = row_number(),
+         var = var_smooth,
+         lower = value - 1.96 * sqrt(var_smooth),
+         upper = value + 1.96 * sqrt(var_smooth)) |> 
+  ggplot(aes(x = s, y = value, color = var)) +
+  geom_errorbar(aes(ymin = lower, ymax = upper, x = s), alpha = .5) +
+  geom_point(size = .3, alpha = .5) +
+  scale_x_continuous(breaks = seq(0, 1440, 240),
+                     labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females",
+       title = "Estimated coefficient and pointwise 95% confidence intervals") +
+  scale_color_paletteer_c("ggthemes::Red-Gold", name = "Pointwise Variance") +
+  theme(legend.position = c(.75, .75)) +
+    scale_y_continuous(limits = c(-2, 1.1))
+
+  
+```
+
+## Joint inference 
+
+We are doing 1440 correlated tests for significance. 
+
+## Joint inference 
+
+Bonferroni: $\alpha = 0.05 / 1440 = 3.47\cdot10^{-5}; z_{1-\alpha/2}=3.98$
+
+
+```{r bonferroni}
+#| cache: true 
+q = qnorm(1-3.472222e-05)
+# bonferroni correction 
+male_smooth |> 
+  as_tibble() |> 
+  mutate(s = row_number(),
+         var = var_smooth,
+         lower = value - 1.96 * sqrt(var_smooth),
+         lower2 = value - q * sqrt(var_smooth),
+         upper = value + 1.96 * sqrt(var_smooth),
+         upper2 = value + q * sqrt(var_smooth)) |> 
+  ggplot() +
+  geom_ribbon(aes(x = s, ymin = lower2, ymax = upper2, fill = "Bonferroni adjusted"), color = NA) +
+  geom_ribbon(aes(x = s, ymin = lower, ymax = upper, fill = "Pointwise"), color = NA) +
+  geom_smooth(data = mdf, inherit.aes = FALSE, aes(x = s, y = value),
+              method = "gam", formula = y ~ s(x, bs = "tp", k = 21), se = FALSE, 
+              color = "black") +
+    scale_x_continuous(breaks = seq(0, 1440, 240),
+                     labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females",
+       title = "Estimated coefficient and 95% confidence intervals") +
+  scale_fill_manual(values = c("slategrey", "#0072B2FF"), name = "") +
+  theme(legend.position = c(.75, .75)) +
+    scale_y_continuous(limits = c(-2, 1.1))
+
+```
+
+## Joint inference 
+
+Use distribution of $\beta$ to find adjusted critical value for joint inference 
+
+
+```{r cma}
+#| cache: true 
+qn = model$cis$qn[2]
+# bonferroni correction 
+male_smooth |> 
+  as_tibble() |> 
+  mutate(s = row_number(),
+         var = var_smooth,
+         lower = value - 1.96 * sqrt(var_smooth),
+         lower3 = value - qn * sqrt(var_smooth),
+         upper3 = value + qn * sqrt(var_smooth),
+         lower2 = value - q * sqrt(var_smooth),
+         upper = value + 1.96 * sqrt(var_smooth),
+         upper2 = value + q * sqrt(var_smooth)) |> 
+  ggplot() +
+  geom_ribbon(aes(x = s, ymin = lower2, ymax = upper2, fill = "Bonferroni adusted"), color = NA) + geom_ribbon(aes(x = s, ymin = lower3, ymax = upper3, fill = "Correlation and multiplicity adjusted (CMA)"), color = NA) +
+  geom_ribbon(aes(x = s, ymin = lower, ymax = upper, fill = "Pointwise"), color = NA) +
+  geom_smooth(data = mdf, inherit.aes = FALSE, aes(x = s, y = value),
+              method = "gam", formula = y ~ s(x, bs = "tp", k = 21), se = FALSE, 
+              color = "black") +
+    scale_x_continuous(breaks = seq(0, 1440, 240),
+                     labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females",
+       title = "Estimated coefficient and 95% confidence intervals") +
+  scale_fill_manual(values = c("slategrey", "#56B4E9FF", "#0072B2FF"), name = "") +
+  theme(legend.position = c(.75, .85)) +
+    scale_y_continuous(limits = c(-2, 1.1))
+
+```
+
+<div style=" position: absolute; bottom: 0.5em; right: -4em; font-size: 0.7em; color: #777; "> @fda_book </div>
+## Final result
 
 ```{r final res}
 #| cache: true 
@@ -433,10 +708,10 @@ plt_df =
 plt_df |> 
   ggplot(aes(x = l, y = beta_hat)) +
   facet_wrap(.~var_name, scales = "free_y") +
-  geom_ribbon(aes(x = l, ymin = lower_pw, ymax = upper_pw, fill = "Pointwise"), alpha = .5) +
-  geom_ribbon(aes(x = l, ymin = lower_joint, ymax = upper_joint, fill = "Joint"), alpha = 0.3) +
+  geom_ribbon(aes(x = l, ymin = lower_joint, ymax = upper_joint, fill = "Joint")) +
+  geom_ribbon(aes(x = l, ymin = lower_pw, ymax = upper_pw, fill = "Pointwise")) +
   geom_line(linewidth = 1.1)  +
-  labs(x = "Functional Domain", y = "Coefficient Estimate") +
+  labs(x = "Time of Day", y = "Coefficient Estimate") +
   scale_fill_manual(values = c("Joint" = "#56B4E9", "Pointwise" =  "#0072B2"), name = "Confidence Interval") +
   scale_x_continuous(breaks = seq(0, 1440, 240),
                      labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
@@ -445,16 +720,6 @@ plt_df |>
   theme(legend.position = "bottom")
 
 ```
-
-# Simulation results
-
-# Application 
-
-
-## Next steps 
-
-
-
 
 
 
@@ -670,3 +935,121 @@ mean_df_rand %>%
 ```
 
 
+# Selected Simulation Results
+
+## Bias 
+
+```{r s1}
+#| cache: true
+
+
+res |>
+  filter(family == "gaussian", len == 50, In == 100,
+         var == "x", boot_type %in% c("unweighted", "BRR"),
+         snr_eps == 1, inf_level == 10) |>
+  filter((strata_scale > 0 & strata_sigma > 0 & snr_b == 0.5) | (strata_scale == 0 & strata_sigma == 0)) |>
+  mutate(re = if_else(strata_scale > 0 & strata_sigma > 0, "re", "nore")) |>
+  ggplot(aes(x = re, y = log10(MISE), fill = boot_type)) +
+  geom_boxplot(staple.color = "black", staplewidth = .1) +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Estimation", labels = c("Survey-weighted", "Unweighted")) +
+  labs(x = "Strata and cluster-level effects?", y = expression("Bias ("*log[10]*" MISE)")) +
+  scale_x_discrete(labels = c("No", "Yes"))
+
+
+
+
+
+```
+
+## Bias
+
+```{r}
+#| cache: true
+
+res |>
+ filter(family == "gaussian", len == 50, In == 100,
+         var == "x", boot_type %in% c("unweighted", "BRR"),
+         snr_eps == .5, strata_scale == 0 & strata_sigma == 0, inf_level %in% c(0, 15)) |>
+  ggplot(aes(x = factor(inf_level), y = log10(MISE), fill = boot_type)) +
+  geom_boxplot(staple.color = "black", staplewidth = .1) +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Estimation", labels = c("Survey-weighted", "Unweighted")) +
+  labs(x = "Informative sampling?", y = expression("Bias ("*log[10]*" MISE)")) +
+  scale_x_discrete(labels = c("No", "Yes"))
+
+
+
+```
+
+## Coverage 
+
+```{r s3}
+#| cache: true 
+res |>
+  filter(family == "gaussian", len == 50, In == 100,
+         var == "x", boot_type %in% c("unweighted", "BRR"),
+         snr_eps == 1, inf_level == 10) |>
+  filter((strata_scale > 0 & strata_sigma > 0 & snr_b == 0.5) | (strata_scale == 0 & strata_sigma == 0)) |>
+  mutate(re = if_else(strata_scale > 0 & strata_sigma > 0, "re", "nore")) |>
+  ggplot(aes(x = re, y = cover_pw/len, fill = boot_type)) +
+  geom_boxplot(staple.color = "black", staplewidth = .1) +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation", labels = c("Survey-weighted", "Unweighted")) +
+  labs(x = "Strata and cluster-level effects?", y = "Pointwise coverage") +
+  scale_x_discrete(labels = c("No", "Yes")) +
+  geom_hline(aes(yintercept = .95), color = "slategrey", linetype = "dashed") +
+  scale_y_continuous(limits = c(0, 1))
+```
+
+## Coverage
+
+```{r s4}
+#| cache: true 
+
+res |>
+  filter(family == "gaussian", len == 50, In == 100,
+         var == "x", boot_type %in% c("unweighted", "BRR"),
+         snr_eps == .5, strata_scale == 0 & strata_sigma == 0, inf_level %in% c(0, 15)) |>
+  ggplot(aes(x = factor(inf_level), y = cover_pw/len, fill = boot_type)) +
+  geom_boxplot(staple.color = "black", staplewidth = .1) +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation", labels = c("Survey-weighted", "Unweighted")) +
+  labs(x = "Informative sampling?", y = "Pointwise coverage") +
+  scale_x_discrete(labels = c("No", "Yes")) +
+  geom_hline(aes(yintercept = .95), color = "slategrey", linetype = "dashed") +
+  scale_y_continuous(limits = c(0, 1))
+
+```
+
+
+## Did we need to do all that survey stuff anyway? 
+
+```{r}
+# this will be figure w reuslts in nhanes
+# maybe mfpca thing or at least add in note 
+```
+
+
+# Software
+
+<div style="font-size: 2em;">
+
+```{r svfosr software}
+#| echo: true 
+#| eval: false 
+
+model_fit = svyfosr::svyfui(steps_mat ~ age + sex,
+                            weights = survey_weight,
+                            data = steps_df,
+                            family = gaussian(),
+                            boot_type = "BRR",
+                            num_boots = 500,
+                            parallel = TRUE,
+                            nknots_min = 20,
+                            seed = 2213)
+
+```
+
+</div>
+![](figs/logo.png){width=20%}
+
+<div style=" position: absolute; bottom: 0.5em; right: -4em; font-size: 0.7em; color: #777; "> @svy_package </div>
+
+## Next steps 

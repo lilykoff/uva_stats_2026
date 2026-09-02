@@ -180,5 +180,9 @@ if (!all(file.exists(c(mims_ml, mims_sl)))) {
   write_rds(pa_df_persub, mims_sl)
 }
 
+## get survey res data
+url = "https://github.com/jhuwit/survey_FoSR/raw/main/results/simulations/all_survey_res.rds"
+curl::curl_download(url, destfile = here::here("data", "survey_res.rds"))
 
+# res = read_rds(here::here("data", "survey_res.rds"))
 
