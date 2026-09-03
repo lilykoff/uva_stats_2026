@@ -1,9 +1,9 @@
 ---
 title: "Function on Scalar Regression under Complex Survey Settings"
-title-slide-attributes:
+# title-slide-attributes:
     # data-background-image: figs/koff-talk-ds.png
-    data-background-size: 20%
-    data-background-position: 90% 90%
+    # data-background-size: 20%
+    # data-background-position: 90% 90%
 subtitle: ""
 author: "Lily Koffman"
 institute: "UVA School of Data Science" 
@@ -24,7 +24,7 @@ format:
     html-math-method: mathjax
     embed-resources: true
     logo: figs/color-screen.png
-    footer: tinyurl.com/xx
+    footer: tinyurl.com/uva-stats-0926
 code: 
   echo: false
   cache: true 
