@@ -123,6 +123,7 @@ var_smooth = read_rds(here::here("data", "var_smooth.rds"))
 model = read_rds(here::here("data", "model_fit.rds"))
 res = read_rds(here::here("data", "survey_res.rds"))
 
+plt_df_unwtd = read_rds(here::here("data", "model_fit_plt_unwtd.rds"))
 set.seed(2025)
 mims_small = 
   mims_sl |> 
@@ -194,7 +195,7 @@ df_plt |>
   scale_x_continuous(breaks = seq(0, 1440, 240),
                      labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
   theme(legend.position = "bottom") +
-  labs(x = "Time of day", y = "Physical activity (MIMS)", title = "Physical Activity Patterns for 10 NHANES Participants") +
+  labs(x = "Time of day", y = "Physical activity (MIMS)", title = "Physical Activity Patterns for 8 NHANES Participants") +
   guides(color = guide_legend(nrow = 1)) 
 
 ```
@@ -213,7 +214,7 @@ df_plt |>
   scale_x_continuous(breaks = seq(0, 1440, 240),
                      labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
   theme(legend.position = "bottom") +
-  labs(x = "Time of day", y = "Physical activity (MIMS)", title = "Smoothed Physical Activity Patterns for 10 NHANES Participants") +
+  labs(x = "Time of day", y = "Physical activity (MIMS)", title = "Smoothed Physical Activity Patterns for 8 NHANES Participants") +
   guides(color = guide_legend(nrow = 1))
 
 
@@ -241,7 +242,7 @@ df_tf |>
   tf_ggplot(aes(tf = mean_mims, color = gender)) +
   geom_smooth(linewidth = 1) +
   facet_grid(~age_cat) +
-  scale_color_manual(values = c("#D55E00", "#009E73")) +
+  scale_color_manual(values = c("#3299FFFF", "#FF9932FF")) +
   scale_x_continuous(breaks = seq(0, 1440, 360),
                      labels = c("00:00", "06:00", "12:00", "18:00", "")) +
   theme(axis.text.x = element_text(angle = 40, size = 10)) +
@@ -330,7 +331,7 @@ Are estimates from FoSR valid for population-level inference?
 
 
 
-+ Standard regression: we have methods and software to take into accounts weights and correlation between clusters (e.g. $\texttt{svyglm}$, $\texttt{svycoxph}$) [@surveys] for estimation and inference
++ Standard regression: methods and software to take into accounts weights and correlation between clusters ($\texttt{svyglm}$, $\texttt{svycoxph}$) [@surveys] for estimation and inference
 
 
 + FUI is built on separate GLMS
@@ -446,13 +447,21 @@ male_vec |>
 
 ## What about inference? 
 
-Can't use the standard errors from weighted GLMs because: 
-(1) don't take into account correlation between strata/clusters
-(2) don't take into account correlation across the functional domain 
+<div style="font-size: 135%;">
+
+::: {.incremental}
+
++ Can't use the standard errors from weighted GLMs because: 
+  + Correlation between strata/clusters
+  + Correlation across the functional domain 
+
+::: 
+
+</div>
 
 ## Inference: survey-aware replication methods 
 
-Use balanced repeated replication (BRR) [@BRR] to obtain $B$ sets of survey weights, fit model on each set to get replicates
+Use balanced repeated replication (BRR) [@BRR] to obtain $B$ sets of survey weights, fit model on each set
 
 ```{r brr vis}
 #| cache: true 
@@ -486,7 +495,7 @@ ggplot(sample_structure %>% filter(included),
        aes(x = unit, y = factor(stratum), fill = unit)) +
   geom_tile(color = "#f6f5f3", linewidth = 1) +
   facet_wrap(~sample_type, ncol = 6) +
-  scale_fill_manual(values = c("unit1" = "#0072B2FF", "unit2" = "#D55E00FF"),
+  scale_fill_manual(values = c("unit1" = "#65CCFFFF", "unit2" = "#FFCC65FF"),
                     labels = c("Unit 1", "Unit 2")) +
   scale_x_discrete(labels = c("1", "2")) +
   labs(title = "Balanced Repeated Replication Schematic",
@@ -501,7 +510,7 @@ ggplot(sample_structure %>% filter(included),
 
 ## Inference: survey-aware replication methods 
 
-$B$ BRR replicates 
+$B$ coefficient function estimates
 
 ```{r boots}
 #| cache: true 
@@ -578,7 +587,7 @@ boot_df |>
   geom_point(data = smoothed_points, aes(x = s, y = smoothed), 
              inherit.aes = FALSE, size = .5) +
   annotate(geom = "label", color = "#FF2A00FF",
-           label = "Estimate variance at each point from B replicates",
+           label = "Estimate variance at each point along the functional domain",
            x = 60, y = -1, hjust = 0) +
   annotate(geom = "curve", 
            x = 60, xend = 1,           
@@ -593,7 +602,7 @@ boot_df |>
 
 ## Inference: survey-aware replication methods 
 
-From $B$ replicates, get pointwise variance
+Use pointwise variance to get pointwise confidence intervals
 
 ```{r ci vis}
 #| cache: true 
@@ -619,14 +628,24 @@ male_smooth |>
        title = "Estimated coefficient and pointwise 95% confidence intervals") +
   scale_color_paletteer_c("ggthemes::Red-Gold", name = "Pointwise Variance") +
   theme(legend.position = c(.75, .75)) +
-    scale_y_continuous(limits = c(-2, 1.1))
+    scale_y_continuous(limits = c(-2, 1.1)) +
+  geom_hline(aes(yintercept = 0), linetype = "dashed", color = "slategrey")
 
   
 ```
 
 ## Joint inference 
 
-We are doing 1440 correlated tests for significance. 
+<div style="font-size: 135%;">
+
+::: {.incremental}
+
++ We are doing 1440 correlated tests for significance
++ How can we adjust our CIs to take into account correlation $and$ multiplicity? 
+
+::: 
+
+</div>
 
 ## Joint inference 
 
@@ -655,7 +674,8 @@ male_smooth |>
                      labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
   labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females",
        title = "Estimated coefficient and 95% confidence intervals") +
-  scale_fill_manual(values = c("slategrey", "#0072B2FF"), name = "") +
+  scale_fill_manual(values = c("grey", "#0072B2FF"), name = "") +
+  geom_hline(aes(yintercept = 0), linetype = "dashed", color = "slategrey") +
   theme(legend.position = c(.75, .75)) +
     scale_y_continuous(limits = c(-2, 1.1))
 
@@ -663,7 +683,71 @@ male_smooth |>
 
 ## Joint inference 
 
-Use distribution of $\beta$ to find adjusted critical value for joint inference 
+
+<div style="font-size: 135%;">
+
+
+Bonferroni is conservative: we know that points close on the functional domain are correlated 
+
+</div> 
+
+## Joint inference: CMA 
+
+**Key insight:** $\hat{\mathbf{f}} = \mathbf{X}\hat{\boldsymbol{\beta}}$ is multivariate normal 
+
+$$\hat{\mathbf{f}} \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
+
+where $\hat{\mathbf{V}}_f = \mathbf{X}\hat{\mathbf{V}}_{\boldsymbol{\beta}} \mathbf{X}^t$
+
+
+
+
+
+## Joint inference: CMA 
+
+**Key insight:** $\hat{\mathbf{f}} = \mathbf{X}\hat{\boldsymbol{\beta}}$ is multivariate normal 
+
+$$\hat{\mathbf{f}} \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
+
+where $\hat{\mathbf{V}}_f = \mathbf{X}\hat{\mathbf{V}}_{\boldsymbol{\beta}} \mathbf{X}^t$
+
+
+**Standardize:** 
+
+$$\frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \approx N(\mathbf{0}_n, \mathbf{C}_f)$$
+
+where $\mathbf{D}_f = \sqrt{\text{diag}(\hat{\mathbf{V}_f)}}$ and $\mathbf{C}_f$ is the correlation matrix
+
+
+
+
+
+## Joint inference: CMA 
+
+**Key insight:** $\hat{\mathbf{f}} = \mathbf{X}\hat{\boldsymbol{\beta}}$ is multivariate normal 
+
+$$\hat{\mathbf{f}} \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
+
+where $\hat{\mathbf{V}}_f = \mathbf{X}\hat{\mathbf{V}}_{\boldsymbol{\beta}} \mathbf{X}^t$
+
+
+**Standardize:** 
+
+$$\frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \approx N(\mathbf{0}_n, \mathbf{C}_f)$$
+
+where $\mathbf{D}_f = \sqrt{\text{diag}(\hat{\mathbf{V}_f)}}$ and $\mathbf{C}_f$ is the correlation matrix
+
+
+**CMA:** Find $q(\mathbf{C}_f, 1-\alpha)$ such that
+
+$$P\{-q(C_f, 1-\alpha) \times e \leq X \leq q(C_f, 1-\alpha) \times e\} = 1-\alpha$$
+
+where $X \sim N(\mathbf{0}_n, \mathbf{C}_f)$
+
+
+## Joint inference: CMA 
+
+Bonferroni critical value = $3.98$; CMA critical value = $3.03$
 
 
 ```{r cma}
@@ -690,9 +774,11 @@ male_smooth |>
                      labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
   labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females",
        title = "Estimated coefficient and 95% confidence intervals") +
-  scale_fill_manual(values = c("slategrey", "#56B4E9FF", "#0072B2FF"), name = "") +
+  scale_fill_manual(values = c("grey", "#56B4E9FF", "#0072B2FF"), name = "") +
   theme(legend.position = c(.75, .85)) +
-    scale_y_continuous(limits = c(-2, 1.1))
+    scale_y_continuous(limits = c(-2, 1.1)) +
+    geom_hline(aes(yintercept = 0), linetype = "dashed", color = "slategrey") 
+
 
 ```
 
@@ -702,10 +788,8 @@ male_smooth |>
 ```{r final res}
 #| cache: true 
 
-plt_df = 
-  plt_df |>
-  mutate(var_name = factor(var_name, labels = c("Intercept", "Male"))) 
 plt_df |> 
+  mutate(var_name = factor(var_name, labels = c("Intercept", "Male"))) |> 
   ggplot(aes(x = l, y = beta_hat)) +
   facet_wrap(.~var_name, scales = "free_y") +
   geom_ribbon(aes(x = l, ymin = lower_joint, ymax = upper_joint, fill = "Joint")) +
@@ -715,7 +799,7 @@ plt_df |>
   scale_fill_manual(values = c("Joint" = "#56B4E9", "Pointwise" =  "#0072B2"), name = "Confidence Interval") +
   scale_x_continuous(breaks = seq(0, 1440, 240),
                      labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
-  geom_hline(data = plt_df |> filter(var_name == "Male"),
+  geom_hline(data = plt_df |> mutate(var_name = factor(var_name, labels = c("Intercept", "Male"))) |> filter(var_name == "Male"),
              aes(yintercept = 0), col = "slategrey", linetype = 2) +
   theme(legend.position = "bottom")
 
@@ -913,7 +997,7 @@ mean_df %>%
   ggplot() +
   geom_spaghetti(aes(y = Y_mean_strat, color = quant), linewidth = 2, alpha = 1) +
   scale_color_manual(name = "Selection probability tertile",
-                     values = c("#FF2A00FF", "#FFEE99FF", "#002AFFFF"),
+                     values = c("#FF2B00FF", "#FF9933FF", "#002BFFFF"),
                      labels = c("Highest third", "Middle third", "Lowest third")) +
   labs(x = "Functional domain", y = "Smoothed functional outcome", title = "Selection probability and functional outcomes under informative sampling") 
 ```
@@ -929,7 +1013,7 @@ mean_df_rand %>%
   ggplot() +
   geom_spaghetti(aes(y = Y_mean_strat, color = quant), linewidth = 2, alpha = 1) +
   scale_color_manual(name = "Selection probability tertile",
-                     values = c("#FF2A00FF", "#FFEE99FF", "#002AFFFF"),
+                    values = c("#FF2B00FF", "#FF9933FF", "#002BFFFF"),
                      labels = c("Highest third", "Middle third", "Lowest third")) +
   labs(x = "Functional domain", y = "Smoothed functional outcome", title = "Selection probability and functional outcomes under random sampling") 
 ```
@@ -992,11 +1076,11 @@ res |>
   mutate(re = if_else(strata_scale > 0 & strata_sigma > 0, "re", "nore")) |>
   ggplot(aes(x = re, y = cover_pw/len, fill = boot_type)) +
   geom_boxplot(staple.color = "black", staplewidth = .1) +
-  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation", labels = c("Survey-weighted", "Unweighted")) +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation", labels = c("Survey-aware", "Unweighted")) +
   labs(x = "Strata and cluster-level effects?", y = "Pointwise coverage") +
   scale_x_discrete(labels = c("No", "Yes")) +
   geom_hline(aes(yintercept = .95), color = "slategrey", linetype = "dashed") +
-  scale_y_continuous(limits = c(0, 1))
+  scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 0.95, 1))
 ```
 
 ## Coverage
@@ -1010,24 +1094,92 @@ res |>
          snr_eps == .5, strata_scale == 0 & strata_sigma == 0, inf_level %in% c(0, 15)) |>
   ggplot(aes(x = factor(inf_level), y = cover_pw/len, fill = boot_type)) +
   geom_boxplot(staple.color = "black", staplewidth = .1) +
-  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation", labels = c("Survey-weighted", "Unweighted")) +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation", labels = c("Survey-aware", "Unweighted")) +
   labs(x = "Informative sampling?", y = "Pointwise coverage") +
   scale_x_discrete(labels = c("No", "Yes")) +
   geom_hline(aes(yintercept = .95), color = "slategrey", linetype = "dashed") +
-  scale_y_continuous(limits = c(0, 1))
+  scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 0.95, 1))
 
 ```
 
 
-## Did we need to do all that survey stuff anyway? 
+# Did we need to do all that survey stuff anyway? 
 
-```{r}
-# this will be figure w reuslts in nhanes
-# maybe mfpca thing or at least add in note 
+---
+
+```{r compare}
+#| cache: true 
+plt_ov = 
+  plt_df |> 
+  mutate(model = "BRR") |> 
+  bind_rows(plt_df_unwtd |>  mutate(model = "Unweighted")) |> 
+  mutate(var_name = if_else(grepl("Male", var_name), "Male", "Intercept"))
+
+disagree_df =
+  plt_ov %>%
+  select(lower_joint, upper_joint, var_name, model, l) %>%
+  mutate(sig = case_when(
+    lower_joint > 0 & upper_joint > 0 ~ 1,
+    upper_joint < 0 & lower_joint < 0 ~ 1,
+    .default = 0
+  )) %>%
+  select(var_name, model, l, sig) %>%
+  pivot_wider(names_from = model, values_from = sig) %>%
+  mutate(brr_sig = BRR == 1 & Unweighted == 0,
+         disagree = BRR != Unweighted) %>%
+  filter(disagree) 
+
+annotation_data = tibble(
+  var_name = "Male",
+  x_label = c(3 * 60, 21 * 60),  # Left and right sides
+  y_label = c(-1.5, -1.7),
+  x_arrow_start = c(3 * 60, 18 * 60),
+  x_arrow_end = c(1.5 * 60, 16.2 * 60),
+  y_arrow_end = c(-1.8, -2),
+  label = c("Only unweighted\njointly significant",
+          "Only survey-aware\njointly significant"),
+  color = c("#CC79A7FF", "#009E73FF"),
+  hjust = c(0, 1)  # Left-align first, right-align second
+)
+
+ggplot(plt_ov, aes(x = l, y = beta_hat, group = model)) +
+    facet_wrap(. ~ var_name, scales = "free_y") +
+    geom_ribbon(aes(x = l, ymin = lower_pw, ymax = upper_pw, fill = model), alpha = .5) +
+    geom_ribbon(aes(x = l, ymin = lower_joint, ymax = upper_joint, fill = model), alpha = .3) +
+    geom_line(aes(color = model), linewidth = 1.1)  +
+    geom_hline(
+      color = "slategrey",
+      data = tibble(var_name = "Male"),
+      aes(yintercept = 0),
+      linetype = "dashed"
+    ) +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), labels = c("Survey aware", "Unweighted")) +
+  scale_color_manual(values = c("#009E73FF", "#CC79A7FF"), labels = c("Survey aware", "Unweighted")) +
+
+    scale_x_continuous(breaks= seq(0, 1440, 4 * 60), labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+    labs(x = "Time of Day", y = "Coefficient Estimate", fill = "Model Type", color = "Model Type") +
+    geom_rect(data = disagree_df %>% filter(brr_sig),
+              aes(x = l, y = -2, height = .5, width = 1), fill = "#009E73FF", inherit.aes = FALSE) +
+    geom_rect(data = disagree_df %>% filter(!brr_sig),
+              aes(x = l, y = -2, height = .5, width = 1), fill = "#CC79A7FF", inherit.aes = FALSE) +
+  geom_text(data = annotation_data,
+            aes(x = x_label, y = y_label, label = label, hjust = hjust),
+            color = annotation_data$color,
+            vjust = 0, size = 3,
+            inherit.aes = FALSE) +
+  geom_segment(data = annotation_data,
+               aes(x = x_arrow_start, xend = x_arrow_end, 
+                   y = y_label, yend = y_arrow_end),
+               arrow = arrow(length = unit(0.2, "cm"), type = "closed"),
+               color = annotation_data$color,
+               inherit.aes = FALSE) +
+  theme(legend.position = "bottom")
 ```
 
 
-# Software
+# Software and Computation
+
+## R Package
 
 <div style="font-size: 2em;">
 
@@ -1052,4 +1204,22 @@ model_fit = svyfosr::svyfui(steps_mat ~ age + sex,
 
 <div style=" position: absolute; bottom: 0.5em; right: -4em; font-size: 0.7em; color: #777; "> @svy_package </div>
 
-## Next steps 
+## Computation 
+
+<div style="font-size: 115%;">
+
+::: {.incremental}
+
++ NHANES model ($B = 500$, $n = 1200$, $L = 1440$) takes under 4 minutes to run on standard computer 
++ Speedups:
+  + If predictors $X$ are same across functional domain, instead of fitting a separate model at each time point, we can create $n\times L$ matrix $Y$ by stacking our outcomes and fit $B = (X'WX)^{-1}X'WY$
+  + Use QR decomposition instead of calculating $(X'WX)^{-1}$ directly
+  + For GLMs, apply above at each step of IRLS or Newton-Raphson 
+  + Parallelize bootstrapping 
+
+::: 
+
+</div>
+
+# References
+
