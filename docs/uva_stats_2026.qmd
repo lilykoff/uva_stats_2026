@@ -10,8 +10,8 @@ institute: "UVA School of Data Science"
 format:
   revealjs:
     theme: custom.scss
-    slide-number: true
-    toc: true
+    slide-number: false
+    toc: false
     toc-depth: 1
     progress: true
     hash: true
@@ -63,7 +63,7 @@ options(digits.secs = 3)
 ```{r ggplot theme}
 #| include: false  
 
-okabe_ito <- c(
+cols = c(
   "#000000", "#E69F00", "#56B4E9", "#009E73",
   "#F0E442", "#0072B2", "#D55E00", "#CC79A7"
 )
@@ -86,8 +86,6 @@ theme_set(
     )
 )
 
-scale_color_okabe <- function(...) scale_color_manual(values = okabe_ito, ...)
-scale_fill_okabe  <- function(...) scale_fill_manual(values = okabe_ito, ...)
 
 ```
 
@@ -222,7 +220,21 @@ df_plt |>
 
 ::: {.notes}
 Natural to ask: are there differences between men and women, e.g.
+Treat a completely observed trajectory as single unit of observation instead of considering each minute of each day as a separate, disconnected data point
 ::: 
+
+## Accelerometer-measured physical activity 
+
+<div style="font-size: 150%;">
+
+::: {.incremental}
++ Does activity depend on covariates? 
+
+
++ Are associations different at different times of the day? 
+:::
+
+</div>
 
 
 ## Accelerometer-measured physical activity 
@@ -230,7 +242,7 @@ Natural to ask: are there differences between men and women, e.g.
 ```{r mims plot}
 #| cache: true
 # convert to tidy fnl format 
-# Assuming your minute columns are min_1, min_2, ..., min_1440
+
 df_tf = mims_sl %>%
   mutate(
     # tfd() needs a matrix of the minute columns
@@ -294,7 +306,9 @@ Interpretation
 
 + Fit separate (univariate) GLM at each point $s$, smooth the resulting point estimates 
 
-+ Bootstrap subjects to get confidence bands 
++ Bootstrap to get confidence bands 
+
++ Other methods for FoSR exist: benefits of FUI in this application will become clear shortly 
 
 </div>
 
@@ -310,15 +324,38 @@ Could also fit with penalized splines
 
 ## NHANES is not a random sample! 
 
+
 ![](figs/nhanes_sample.gif)
 
 Individuals sampled in geographic clusters, minority groups oversampled 
 
 Are estimates from FoSR valid for population-level inference? 
 
-**No** method exists for function on scalar regression under complex surveys
 
 <div style=" position: absolute; bottom: -1em; left: 10em; font-size: 0.6em; color: #777; "> [NHANES Sample Design Tutorial](https://wwwn.cdc.gov/nchs/nhanes/tutorials/sampledesign.aspx) </div>
+
+::: {.notes}
+
+What happens if we ignore? 
+
+::: 
+
+## NHANES is not a random sample! 
+
+<div style="font-size: 135%;">
+
+::: {.incremental}
+
++ **No** method exists for function on scalar regression under complex surveys
+
+
++ Ignoring the sampling structure can lead to: 
+
+  + Biased estimates (need to account for weights to make survey look like population) 
+  + Incorrect inference (individuals in same stratum/PSU have correlated data; failure to account can under/overestimate variance) 
+
+::: 
+</div>
 
 # What if we combine some existing methods? 
 
@@ -333,8 +370,7 @@ Are estimates from FoSR valid for population-level inference?
 
 + Standard regression: methods and software to take into accounts weights and correlation between clusters ($\texttt{svyglm}$, $\texttt{svycoxph}$) [@surveys] for estimation and inference
 
-
-+ FUI is built on separate GLMS
++ FUI is built on separate GLMs
 
 + **Idea**: incorporate survey weights into the GLMs (estimation) and use survey-aware replication/bootstrap methods for inference 
 
@@ -451,17 +487,19 @@ male_vec |>
 
 ::: {.incremental}
 
-+ Can't use the standard errors from weighted GLMs because: 
-  + Correlation between strata/clusters
-  + Correlation across the functional domain 
++ Standard errors from weighted GLMs don't account for correlation between individuals in same stratum/PSU 
++ Survey-aware replication methods generate $B$ sets of survey weights (analogous to bootstrap replicates), accounting for strata/PSU structure
++ Fit a model on each bootstrap replicate and estimate standard errors from the replicates 
++ Two strategies: Rao-Wu-Yue-Beaumont (RWYB) bootstrap [@RWYB] and balanced repeated replication (BRR) [@BRR], we focus on BRR here 
 
-::: 
+:::
 
 </div>
 
-## Inference: survey-aware replication methods 
 
-Use balanced repeated replication (BRR) [@BRR] to obtain $B$ sets of survey weights, fit model on each set
+## Inference: BRR 
+
+Choose one PSU from each stratum, double weights for each individual in selected PSU, fit model 
 
 ```{r brr vis}
 #| cache: true 
@@ -508,7 +546,7 @@ ggplot(sample_structure %>% filter(included),
 ```
 
 
-## Inference: survey-aware replication methods 
+## Inference: BRR 
 
 $B$ coefficient function estimates
 
@@ -565,7 +603,7 @@ boot_df |>
 ### Fix 
 ```
 
-## Inference: survey-aware replication methods 
+## Inference: BRR 
 
 From $B$ BRR replicates, get pointwise variance
 
@@ -600,7 +638,7 @@ boot_df |>
 
 ```
 
-## Inference: survey-aware replication methods 
+## Inference: BRR 
 
 Use pointwise variance to get pointwise confidence intervals
 
@@ -640,16 +678,22 @@ male_smooth |>
 
 ::: {.incremental}
 
-+ We are doing 1440 correlated tests for significance
-+ How can we adjust our CIs to take into account correlation $and$ multiplicity? 
++ Pointwise intervals ask "are females more active than males at 8AM?"
+  + $\beta(s) \neq 0$ at $s$?
+
++ Might also want to ask whether the entire daily activity pattern is different between males and females
+  + Joint significance: $\beta(s) \neq 0 \text{ } \forall s$?
+
++ We have a multiplicity problem if we use the pointwise intervals: we're testing $\beta(s) = 0$ $1440$ times 
+  + Expect $1440 \cdot 0.05 = 72$ false positives under the null
 
 ::: 
 
 </div>
 
-## Joint inference 
+## Joint inference: Bonferroni correction 
 
-Bonferroni: $\alpha = 0.05 / 1440 = 3.47\cdot10^{-5}; z_{1-\alpha/2}=3.98$
+Bonferroni: $\alpha = \frac{0.05}{1440}; z_{1-\alpha/2}=3.98$
 
 
 ```{r bonferroni}
@@ -681,73 +725,79 @@ male_smooth |>
 
 ```
 
-## Joint inference 
+## Joint inference: Bonferroni correction
 
 
 <div style="font-size: 135%;">
 
+::: {.incremental}
++ Bonferroni gives valid joint coverage, but it is conservative because tests are not independent
+  + $\hat{\beta}_1(8:00\text{am})$ and $\hat{\beta}_1(8:01\text{am})$ are highly correlated 
++ How can we adjust our CIs to take into account correlation $and$ multiplicity (CMA)? 
 
-Bonferroni is conservative: we know that points close on the functional domain are correlated 
+
+:::
+
 
 </div> 
 
-## Joint inference: CMA 
+## Joint inference: intuition
 
-**Key insight:** $\hat{\mathbf{f}} = \mathbf{X}\hat{\boldsymbol{\beta}}$ is multivariate normal 
+<div style="font-size: 135%;">
 
-$$\hat{\mathbf{f}} \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
+::: {.incremental}
 
-where $\hat{\mathbf{V}}_f = \mathbf{X}\hat{\mathbf{V}}_{\boldsymbol{\beta}} \mathbf{X}^t$
++ The coefficient is jointly significant if the confidence band excludes zero everywhere 
++ Controlled by the "worst case", where our estimate comes closes to zero 
++ Joint significance $\iff$ all standardized coefficient estimates exceed the critical value in abs. value
++ Under the null, how big does $\max_s |\frac{\hat{\beta}(s)}{SE(s)}|$ get? 
++ Depends on the correlation structure 
+:::
 
-
-
-
-
-## Joint inference: CMA 
-
-**Key insight:** $\hat{\mathbf{f}} = \mathbf{X}\hat{\boldsymbol{\beta}}$ is multivariate normal 
-
-$$\hat{\mathbf{f}} \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
-
-where $\hat{\mathbf{V}}_f = \mathbf{X}\hat{\mathbf{V}}_{\boldsymbol{\beta}} \mathbf{X}^t$
-
-
-**Standardize:** 
-
-$$\frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \approx N(\mathbf{0}_n, \mathbf{C}_f)$$
-
-where $\mathbf{D}_f = \sqrt{\text{diag}(\hat{\mathbf{V}_f)}}$ and $\mathbf{C}_f$ is the correlation matrix
-
-
-
-
+</div>
 
 ## Joint inference: CMA 
+ 
+**Step 1**: recognize that coefficient estimates are multivariate Normal 
+$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}(s_L)\big)^T \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
 
-**Key insight:** $\hat{\mathbf{f}} = \mathbf{X}\hat{\boldsymbol{\beta}}$ is multivariate normal 
+## Joint inference: CMA 
+ 
+**Step 1**: recognize that coefficient estimates are multivariate Normal 
+$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}(s_L)\big)^T \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
 
-$$\hat{\mathbf{f}} \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
+**Step 2**: Standardize to get z-scores
 
-where $\hat{\mathbf{V}}_f = \mathbf{X}\hat{\mathbf{V}}_{\boldsymbol{\beta}} \mathbf{X}^t$
+$$\mathbf{Z} = \frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \approx N(\mathbf{0}_n, \mathbf{C}_f)$$
+where $\mathbf{D}_f = \sqrt{\text{diag}(\hat{\mathbf{V}}_f)}$ and $\mathbf{C}_f$ is the correlation matrix (estimated from BRR)
 
+::: {.notes} 
+This correlation matrix $\mathbf{V}_f)$ is what we need to find out CMA critical value 
++ Diagonal entries: uncertainty at each time point 
++ Off-diagonal entries: correlation across time points 
+:::
 
-**Standardize:** 
+## Joint inference: CMA 
+ 
+**Step 1**: recognize that coefficient estimates are multivariate Normal 
+$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}(s_L)\big)^T \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
 
-$$\frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \approx N(\mathbf{0}_n, \mathbf{C}_f)$$
+**Step 2**: Standardize to get z-scores
 
-where $\mathbf{D}_f = \sqrt{\text{diag}(\hat{\mathbf{V}_f)}}$ and $\mathbf{C}_f$ is the correlation matrix
+$$\mathbf{Z} = \frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \approx N(\mathbf{0}_n, \mathbf{C}_f)$$
+where $\mathbf{D}_f = \sqrt{\text{diag}(\hat{\mathbf{V}}_f)}$ and $\mathbf{C}_f$ is the correlation matrix (estimated from BRR)
 
+**Step 3**: find critical value $q(\mathbf{C}_f, 1-\alpha)$ such that
 
-**CMA:** Find $q(\mathbf{C}_f, 1-\alpha)$ such that
+$$P\big(\max_s|Z_s|\leq q\big) = 0.95  \text{, where } \mathbf{Z} \sim \mathcal{N}(\mathbf{0}, \hat{\mathbf{C}}_f)$$
 
-$$P\{-q(C_f, 1-\alpha) \times e \leq X \leq q(C_f, 1-\alpha) \times e\} = 1-\alpha$$
-
-where $X \sim N(\mathbf{0}_n, \mathbf{C}_f)$
-
+::: {.notes}
+Use the multivariate normal structure of our estimates. The correlation matrix from BRR tells us how the z-scores at different time points move together. We simulate from this distribution and find the 95th percentile of the max - that's the critical value. Best of both worlds b/w bonferroni and pointwise.
+::: 
 
 ## Joint inference: CMA 
 
-Bonferroni critical value = $3.98$; CMA critical value = $3.03$
+Bonferroni critical value = $3.98$; CMA critical value = $3.03$; pointwise critical value = $1.96$
 
 
 ```{r cma}
@@ -783,6 +833,7 @@ male_smooth |>
 ```
 
 <div style=" position: absolute; bottom: 0.5em; right: -4em; font-size: 0.7em; color: #777; "> @fda_book </div>
+
 ## Final result
 
 ```{r final res}
@@ -806,10 +857,10 @@ plt_df |>
 ```
 
 
-
 # Easy enough to implement -- but how do we know if it works? 
 
-## Simulation goal
+
+## Compare survey-aware vs. unweighted approach with simulation
 
 ::: {.incremental}
 
@@ -819,153 +870,13 @@ plt_df |>
 + [Optionally] create heterogeneity in covariate effects by strata/cluster
 + Sample from the superpopulation in each iteration of the simulation
   + [Optionally] allow for informative sampling: probability of being included in sample related to functional outcome 
++ Details in Appendix
++ Evaluate coverage and estimation error (integrated squared error; ISE = $\int_s \{\hat{\beta}(s) - \beta(s)\}^2ds$)
 
 :::
 
-## Data generating
+## Simulated survey data 
 
-
-```{r}
-#| cache: true
-btrue_df %>% 
-  mutate(name = factor(name, 
-                       levels = c("(Intercept)", "X"),  # adjust to your actual levels
-                       labels = c("beta[0](s)", "beta[1](s)"))) %>%
-  ggplot(aes(x = s, y = beta, color = name)) + 
-  facet_grid(.~name, labeller = label_parsed) + 
-  geom_line(linewidth = 1.1) + 
-  labs(x = "Functional domain", 
-       y = "Value", 
-       color = "", 
-       title = "Global intercept and slope functions") +
-  theme(legend.position = "none",
-        strip.text = element_text(family = "sans")  # Use default font for Greek
-  ) +
-  scale_color_paletteer_d("ggthemes::colorblind", direction = -1)
-
-```
-
-## Data generating: add stratum-specific covariate effects 
-
-$\beta_{1(h)}(s) = \gamma_h\cdot\beta_1(s)$
-
-Where $\gamma_h \sim N(1, 0.125^2)$
-
-```{r strata specific slopes}
-#| cache: true 
-
-b1_strat_df |> 
-  pivot_longer(cols = -c(strata, scale),
-               names_to = "l", 
-               names_transform = ~as.integer(sub(".*V", "", .x))) %>% 
-  ggplot(aes(x = l, y = value, color = scale, group = strata)) + 
-  geom_line(linewidth = 1) +
-  scale_color_paletteer_c("ggthemes::Red-Gold") +
-  labs(x = "Functional Domain", y = "Value", title = expression(beta[1(h)](s))) +
-  geom_line(data = btrue_df |> filter(name == "X") |> mutate(strata = 1), 
-            aes(x = s, y = beta, linetype = "Global Slope"), 
-            color = "#2B5C8A", linewidth = 1.1, inherit.aes = FALSE) +
-  scale_linetype_manual(
-    name = "", 
-    values = "dashed",
-    labels = expression("Global slope " * beta[1](s))
-  ) +
-  labs(x = "Functional Domain", y = "Value", title = expression(beta[1(h)](s))) +
-  theme(legend.position = c(0.2, 0.7),
-        title = element_text(family = "sans"),
-        legend.text = element_text(family = "sans", size = 14)) +
-  guides(color = "none")
-```
-
-
-## Data generating: induce strata and cluster-level correlation with functional random effects
-
-Generate strata-level ($b_{h(i)}(s)$) and cluster-level ($b_{c(h, i)}(s)$) random effects using B-spline basis 
-
-Individual-level linear predictor: 
-$\eta_i(s) = \beta_0(s) + X_i\beta_{1(h)}(s) + b_{h(i)}(s) + b_{c(h, i)}(s)$
-
-```{r re plot}
-#| cache: true
-re_df |>
-  filter(strata %in% c(1:10),
-         psu %in% psu_df$x) %>%
-  group_by(strata, psu) %>%
-  slice_sample(n = 100) %>%
-  ungroup() %>%
-  pivot_longer(cols = starts_with("V"),
-               names_to = "ind",
-               names_transform = ~as.integer(sub(".*V", "", .x))) %>%
-  mutate(strata = paste0("Stratum ", strata),
-         strata = factor(strata, levels = paste0("Stratum ", seq(1:10)))) %>%
-  ggplot(aes(x = ind, y = value, color = factor(psu))) +
-  geom_smooth(se = FALSE, linewidth = .7) +
-  facet_wrap(~strata, nrow = 2) +
-  labs(x = "Functional Domain", y = "Value", title = "Random effects by stratum and cluster") +
-  theme(legend.position = "none") +
-  scale_color_viridis_d(option = "A")
-```
-
-## Data generating: induce strata and cluster-level correlation with functional random effects
-
-Generate strata-level ($b_{h(i)}(s)$) and cluster-level ($b_{c(h, i)}(s)$) random effects using B-spline basis 
-
-Individual-level linear predictor: 
-$\eta_i(s) = \beta_0(s) + X_i\beta_{1(h)}(s) + b_{h(i)}(s) + b_{c(h, i)}(s)$
-
-```{r fe plot}
-#| cache: true
-fixef_df |>
-  filter(strata %in% c(1:10),
-         psu %in% psu_df$x) %>%
-  group_by(strata, psu) %>%
-  slice_sample(n = 100) %>%
-  ungroup() %>%
-  pivot_longer(cols = starts_with("V"),
-               names_to = "ind",
-               names_transform = ~as.integer(sub(".*V", "", .x))) %>%
-  mutate(strata = paste0("Stratum ", strata),
-         strata = factor(strata, levels = paste0("Stratum ", seq(1:10)))) %>%
-  ggplot(aes(x = ind, y = value, color = factor(psu))) +
-  geom_smooth(se = FALSE, linewidth = .7) +
-  facet_wrap(~strata, nrow = 2) +
-  labs(x = "Functional Domain", y = "Value", title = "Fixed effects by stratum and cluster") +
-  theme(legend.position = "none") +
-  scale_color_viridis_d(option = "A")
-```
-
-## Data generating: induce strata and cluster-level correlation with functional random effects
-
-Generate strata-level ($b_{h(i)}(s)$) and cluster-level ($b_{c(h, i)}(s)$) random effects using B-spline basis 
-
-Individual-level linear predictor: 
-$\eta_i(s) = \beta_0(s) + X_i\beta_{1(h)}(s) + b_{h(i)}(s) + b_{c(h, i)}(s)$
-
-```{r lp plot}
-#| cache: true
-lp_df |>
-  filter(strata %in% c(1:10),
-         psu %in% psu_df$x) %>%
-  group_by(strata, psu) %>%
-  slice_sample(n = 100) %>%
-  ungroup() %>%
-  pivot_longer(cols = starts_with("V"),
-               names_to = "ind",
-               names_transform = ~as.integer(sub(".*V", "", .x))) %>%
-  mutate(strata = paste0("Stratum ", strata),
-         strata = factor(strata, levels = paste0("Stratum ", seq(1:10)))) %>%
-  ggplot(aes(x = ind, y = value, color = factor(psu))) +
-  geom_smooth(se = FALSE, linewidth = .7) +
-  facet_wrap(~strata, nrow = 2) +
-  labs(x = "Functional Domain", y = "Value", title = "Smoothed linear predictors by stratum and cluster") +
-  theme(legend.position = "none") +
-  scale_color_viridis_d(option = "A")
-
-```
-
-## Data generating: get functional outcomes from linear predictors
-
-$Y_i(s)$ sampled from $\mathcal{N}(\eta_i(s), \sigma^2)$
 
 ```{r plot y}
 #| cache: true
@@ -981,13 +892,16 @@ y_obs |>
   ggplot(aes(x = ind, y = value, color = factor(psu))) + 
   facet_wrap(~strata, nrow = 2) + 
   geom_smooth(se = FALSE, linewidth = 0.7) + 
-  labs(x = "Functional Domain", y = "Value", title = "Mean smoothed outcomes by stratum and cluster") + 
+  labs(x = "Functional Domain", y = "Value", title = "Mean smoothed outcomes by stratum") + 
   theme(legend.position = "none") +
   scale_color_viridis_d(option = "A")
 ```
 
+
+
+
 ## Survey sampling: sample individuals from superpopulation 
-1. Sample 2 clusters from each stratum
+1. Sample two clusters from each stratum
 2. Sample individuals from each cluster 
 3. Informative sampling: allow selection probability to depend on functional outcome: $\pi_i \propto \frac{1}{L}\sum_{s=1}^LY_i(s)$
 
@@ -996,19 +910,16 @@ y_obs |>
 mean_df %>%
   ggplot() +
   geom_spaghetti(aes(y = Y_mean_strat, color = quant), linewidth = 2, alpha = 1) +
-  scale_color_manual(name = "Selection probability tertile",
+  scale_color_manual(name = "Selection probability\ntertile",
                      values = c("#FF2B00FF", "#FF9933FF", "#002BFFFF"),
                      labels = c("Highest third", "Middle third", "Lowest third")) +
   labs(x = "Functional domain", y = "Smoothed functional outcome", title = "Selection probability and functional outcomes under informative sampling") 
 ```
 
-## Survey sampling: sample individuals from superpopulation 
-1. Sample 2 clusters from each stratum
-2. Sample individuals from each cluster 
-3. Informative sampling: allow selection probability to depend on functional outcome: $\pi_i \propto \frac{1}{L}\sum_{s=1}^LY_i(s)$
 
 ```{r plot surv wts random}
 #| cache: true
+#| eval: false 
 mean_df_rand %>%
   ggplot() +
   geom_spaghetti(aes(y = Y_mean_strat, color = quant), linewidth = 2, alpha = 1) +
@@ -1021,23 +932,25 @@ mean_df_rand %>%
 
 # Selected Simulation Results
 
-## Bias 
+## Estimation error: intercept
 
 ```{r s1}
 #| cache: true
-
-
 res |>
   filter(family == "gaussian", len == 50, In == 100,
-         var == "x", boot_type %in% c("unweighted", "BRR"),
-         snr_eps == 1, inf_level == 10) |>
+         var != "x", boot_type %in% c("unweighted", "BRR"),
+         snr_eps == 1, inf_level %in% c(0, 15)) |>
+  mutate(boot_type = factor(boot_type, levels = c("unweighted", "BRR"), labels = c("Unweighted", "Survey-aware")),
+         inf_level = factor(inf_level, levels = c("0", "15"),
+                            labels = c("Sampling: Uniform", "Sampling: Informative"))) |> 
   filter((strata_scale > 0 & strata_sigma > 0 & snr_b == 0.5) | (strata_scale == 0 & strata_sigma == 0)) |>
   mutate(re = if_else(strata_scale > 0 & strata_sigma > 0, "re", "nore")) |>
   ggplot(aes(x = re, y = log10(MISE), fill = boot_type)) +
   geom_boxplot(staple.color = "black", staplewidth = .1) +
-  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Estimation", labels = c("Survey-weighted", "Unweighted")) +
-  labs(x = "Strata and cluster-level effects?", y = expression("Bias ("*log[10]*" MISE)")) +
-  scale_x_discrete(labels = c("No", "Yes"))
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Estimation") +
+  labs(x = "Strata and cluster-level effects?", y = expression("Estimation error ("*log[10]*" ISE)")) +
+  scale_x_discrete(labels = c("No", "Yes")) +
+  facet_grid(.~inf_level) 
 
 
 
@@ -1045,63 +958,122 @@ res |>
 
 ```
 
-## Bias
+## Estimation error: coefficient
 
 ```{r}
 #| cache: true
 
 res |>
- filter(family == "gaussian", len == 50, In == 100,
+  filter(family == "gaussian", len == 50, In == 100,
          var == "x", boot_type %in% c("unweighted", "BRR"),
-         snr_eps == .5, strata_scale == 0 & strata_sigma == 0, inf_level %in% c(0, 15)) |>
-  ggplot(aes(x = factor(inf_level), y = log10(MISE), fill = boot_type)) +
+         snr_eps == 1, inf_level %in% c(0, 15)) |>
+  mutate(boot_type = factor(boot_type, levels = c("unweighted", "BRR"), labels = c("Unweighted", "Survey-aware")),
+         inf_level = factor(inf_level, levels = c("0", "15"),
+                            labels = c("Sampling: Uniform", "Sampling: Informative"))) |> 
+  filter((strata_scale > 0 & strata_sigma > 0 & snr_b == 0.5) | (strata_scale == 0 & strata_sigma == 0)) |>
+  mutate(re = if_else(strata_scale > 0 & strata_sigma > 0, "re", "nore")) |>
+  ggplot(aes(x = re, y = log10(MISE), fill = boot_type)) +
   geom_boxplot(staple.color = "black", staplewidth = .1) +
-  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Estimation", labels = c("Survey-weighted", "Unweighted")) +
-  labs(x = "Informative sampling?", y = expression("Bias ("*log[10]*" MISE)")) +
-  scale_x_discrete(labels = c("No", "Yes"))
-
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Estimation") +
+  labs(x = "Strata and cluster-level effects?", y = expression("Estimation error ("*log[10]*" ISE)")) +
+  scale_x_discrete(labels = c("No", "Yes")) +
+  facet_grid(.~inf_level) 
 
 
 ```
 
-## Coverage 
+## Coverage: intercept
 
-```{r s3}
+```{r s4}
 #| cache: true 
 res |>
   filter(family == "gaussian", len == 50, In == 100,
-         var == "x", boot_type %in% c("unweighted", "BRR"),
-         snr_eps == 1, inf_level == 10) |>
+         var != "x", boot_type %in% c("unweighted", "BRR"),
+         snr_eps == 1, inf_level %in% c(0, 15)) |>
+  mutate(boot_type = factor(boot_type, levels = c("unweighted", "BRR"), labels = c("Unweighted", "Survey-aware")),
+         inf_level = factor(inf_level, levels = c("0", "15"),
+                            labels = c("Uniform", "Informative"))) |> 
   filter((strata_scale > 0 & strata_sigma > 0 & snr_b == 0.5) | (strata_scale == 0 & strata_sigma == 0)) |>
   mutate(re = if_else(strata_scale > 0 & strata_sigma > 0, "re", "nore")) |>
   ggplot(aes(x = re, y = cover_pw/len, fill = boot_type)) +
   geom_boxplot(staple.color = "black", staplewidth = .1) +
-  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation", labels = c("Survey-aware", "Unweighted")) +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation") +
   labs(x = "Strata and cluster-level effects?", y = "Pointwise coverage") +
+  facet_grid(.~inf_level) +
   scale_x_discrete(labels = c("No", "Yes")) +
   geom_hline(aes(yintercept = .95), color = "slategrey", linetype = "dashed") +
   scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 0.95, 1))
+
 ```
 
-## Coverage
+## Coverage: coefficient
 
-```{r s4}
-#| cache: true 
-
+```{r s3}
 res |>
   filter(family == "gaussian", len == 50, In == 100,
          var == "x", boot_type %in% c("unweighted", "BRR"),
-         snr_eps == .5, strata_scale == 0 & strata_sigma == 0, inf_level %in% c(0, 15)) |>
-  ggplot(aes(x = factor(inf_level), y = cover_pw/len, fill = boot_type)) +
+         snr_eps == 1, inf_level %in% c(0, 15)) |>
+  mutate(boot_type = factor(boot_type, levels = c("unweighted", "BRR"), labels = c("Unweighted", "Survey-aware")),
+         inf_level = factor(inf_level, levels = c("0", "15"),
+                            labels = c("Sampling: Uniform", "Sampling: Informative"))) |> 
+  filter((strata_scale > 0 & strata_sigma > 0 & snr_b == 0.5) | (strata_scale == 0 & strata_sigma == 0)) |>
+  mutate(re = if_else(strata_scale > 0 & strata_sigma > 0, "re", "nore")) |>
+  ggplot(aes(x = re, y = cover_pw/len, fill = boot_type)) +
   geom_boxplot(staple.color = "black", staplewidth = .1) +
-  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation", labels = c("Survey-aware", "Unweighted")) +
-  labs(x = "Informative sampling?", y = "Pointwise coverage") +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation") +
+  labs(x = "Strata and cluster-level effects?", y = "Pointwise coverage") +
+  facet_grid(.~inf_level) +
   scale_x_discrete(labels = c("No", "Yes")) +
   geom_hline(aes(yintercept = .95), color = "slategrey", linetype = "dashed") +
   scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 0.95, 1))
 
+
 ```
 
+
+## Simulation summary 
+
+<div style="font-size: 120%">
+::: {.incremental}
++ Unweighted only achieves adequate coverage for intercept and coefficient w/ uniform sampling and no stratum/PSU random effects
++ Survey method achieves adequate coverage and lower bias than unweighted methods under informative sampling and/or stratum/PSU effects
++ With informative sampling but minimal stratum/PSU effects, BRR and weighted bootstrap for inference perform similarly 
++ Results hold for Gaussian and non-Gaussian data
++ Empirical simulation resampling NHANES curves validated results 
+
+:::
+</div> 
+
+## Assumptions 
+
+<div style="font-size: 120%">
+
+**Survey design** 
+
++ Survey weights are bounded 
++ Inclusion probabilities are positive and correctly specified 
++ For BRR: two PSUs per stratum
+
+**Model**
+
++ $\beta(s)$ is smooth
++ The mean is correctly specified: $E(Y_i(s)|X_i) = g^{-1}(X_i\beta(s))$
++ Functional outcomes $Y_i(s)$ are independent conditional on covariates and survey design
+
+</div> 
+## Asymptotics
+<div style="font-size: 120%">
+
+**Consistency**
+
+  + Survey-weighted pointwise estimator $\hat{\beta}(s)$ is consistent for the population parameter $\beta(s)$
+  + Smoothed estimator $\tilde{\beta}(s)$ is consistent for $\beta(s)$ provided that smoothing parameter $\lambda$ approaches zero at the appropriate rate
+  
+**Coverage** 
+
+  + Pointwise CIs achieve nominal rate due to consistency of BRR variance estimators, provided smoothing bias of smaller order than standard error
+  + Joint CMA intervals achieve nominal coverage under assumption that $\hat{\beta}(s)$ is multivariate normal across the functional domain 
+</div>
 
 # Did we need to do all that survey stuff anyway? 
 
@@ -1113,14 +1085,18 @@ plt_ov =
   plt_df |> 
   mutate(model = "BRR") |> 
   bind_rows(plt_df_unwtd |>  mutate(model = "Unweighted")) |> 
-  mutate(var_name = if_else(grepl("Male", var_name), "Male", "Intercept"))
+  mutate(var_name = if_else(grepl("Male", var_name), "Male", "Intercept")) |> 
+  mutate(model2 = factor(model, levels = c("Unweighted", "BRR"),
+                        labels = c("Unweighted", "Survey-aware")))
+
+
 
 disagree_df =
   plt_ov %>%
-  select(lower_joint, upper_joint, var_name, model, l) %>%
+  select(lower_pw, upper_pw, var_name, model, l) %>%
   mutate(sig = case_when(
-    lower_joint > 0 & upper_joint > 0 ~ 1,
-    upper_joint < 0 & lower_joint < 0 ~ 1,
+    lower_pw > 0 & upper_pw > 0 ~ 1,
+    upper_pw < 0 & lower_pw < 0 ~ 1,
     .default = 0
   )) %>%
   select(var_name, model, l, sig) %>%
@@ -1133,34 +1109,38 @@ annotation_data = tibble(
   var_name = "Male",
   x_label = c(3 * 60, 21 * 60),  # Left and right sides
   y_label = c(-1.5, -1.7),
-  x_arrow_start = c(3 * 60, 18 * 60),
-  x_arrow_end = c(1.5 * 60, 16.2 * 60),
+  # x_arrow_start = c(3 * 60, 18 * 60),
+  # x_arrow_end = c(1.5 * 60, 16.2 * 60),
+  # y_arrow_end = c(-1.8, -2),
+  x_arrow_start = c(4 * 60, 18 * 60),
+  x_arrow_end = c(6 * 60, 23.2 * 60),
   y_arrow_end = c(-1.8, -2),
-  label = c("Only unweighted\njointly significant",
-          "Only survey-aware\njointly significant"),
+  label = c("Only survey-aware\npointwise significant",
+            "Only unweighted\npointwise significant"),
   color = c("#CC79A7FF", "#009E73FF"),
   hjust = c(0, 1)  # Left-align first, right-align second
 )
 
-ggplot(plt_ov, aes(x = l, y = beta_hat, group = model)) +
+# annotation_data = annotation_data |> slice(1)
+
+ggplot(plt_ov, aes(x = l, y = beta_hat, group = model2)) +
     facet_wrap(. ~ var_name, scales = "free_y") +
-    geom_ribbon(aes(x = l, ymin = lower_pw, ymax = upper_pw, fill = model), alpha = .5) +
-    geom_ribbon(aes(x = l, ymin = lower_joint, ymax = upper_joint, fill = model), alpha = .3) +
-    geom_line(aes(color = model), linewidth = 1.1)  +
+    geom_ribbon(aes(x = l, ymin = lower_pw, ymax = upper_pw, fill = model2), alpha = .5) +
+    geom_ribbon(aes(x = l, ymin = lower_joint, ymax = upper_joint, fill = model2), alpha = .3) +
+    geom_line(aes(color = model2), linewidth = 1.1)  +
     geom_hline(
       color = "slategrey",
       data = tibble(var_name = "Male"),
       aes(yintercept = 0),
       linetype = "dashed"
     ) +
-  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), labels = c("Survey aware", "Unweighted")) +
-  scale_color_manual(values = c("#009E73FF", "#CC79A7FF"), labels = c("Survey aware", "Unweighted")) +
-
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF")) +
+  scale_color_manual(values = c("#009E73FF", "#CC79A7FF")) +
     scale_x_continuous(breaks= seq(0, 1440, 4 * 60), labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
     labs(x = "Time of Day", y = "Coefficient Estimate", fill = "Model Type", color = "Model Type") +
-    geom_rect(data = disagree_df %>% filter(brr_sig),
-              aes(x = l, y = -2, height = .5, width = 1), fill = "#009E73FF", inherit.aes = FALSE) +
     geom_rect(data = disagree_df %>% filter(!brr_sig),
+              aes(x = l, y = -2, height = .5, width = 1), fill = "#009E73FF", inherit.aes = FALSE) +
+    geom_rect(data = disagree_df %>% filter(brr_sig),
               aes(x = l, y = -2, height = .5, width = 1), fill = "#CC79A7FF", inherit.aes = FALSE) +
   geom_text(data = annotation_data,
             aes(x = x_label, y = y_label, label = label, hjust = hjust),
@@ -1176,6 +1156,9 @@ ggplot(plt_ov, aes(x = l, y = beta_hat, group = model)) +
   theme(legend.position = "bottom")
 ```
 
+::: {.notes}
+Males are significantly less active than females in the early morning and significantly more active in the evening
+::: 
 
 # Software and Computation
 
@@ -1210,7 +1193,7 @@ model_fit = svyfosr::svyfui(steps_mat ~ age + sex,
 
 ::: {.incremental}
 
-+ NHANES model ($B = 500$, $n = 1200$, $L = 1440$) takes under 4 minutes to run on standard computer 
++ NHANES model ($B = 500$, $n = 12500$, $L = 1440$) takes under 4 minutes to run on standard computer 
 + Speedups:
   + If predictors $X$ are same across functional domain, instead of fitting a separate model at each time point, we can create $n\times L$ matrix $Y$ by stacking our outcomes and fit $B = (X'WX)^{-1}X'WY$
   + Use QR decomposition instead of calculating $(X'WX)^{-1}$ directly
@@ -1221,5 +1204,201 @@ model_fit = svyfosr::svyfui(steps_mat ~ age + sex,
 
 </div>
 
-# References
 
+# Summary, Limitations, Future Directions
+
+## Summary
+
+<div style="font-size: 115%;">
+
+::: {.incremental}
+
++ Developed a method for function on scalar regression under complex survey designs, motivated by physical activity in NHANES
++ Demonstrated this is important to account for under informative sampling, or strong within-PSU/strata covariate effects and/or correlation 
++ Computationally efficient software for implementation: Gaussian, Poisson, and binomial data 
+
+::: 
+
+</div> 
+
+## Limitations and Future Directions 
+
+<div style="font-size: 115%;">
+
+::: {.incremental}
+
++ Multilevel data (e.g. multiple days)
++ Full asymptotic treatment 
++ Smoothing order sensitivity 
+
+::: 
+
+</div> 
+
+# Appendix
+
+## Simulation data generation
+
+
+```{r}
+#| cache: true
+btrue_df %>% 
+  mutate(name = factor(name, 
+                       levels = c("(Intercept)", "X"),  # adjust to your actual levels
+                       labels = c("beta[0](s)", "beta[1](s)"))) %>%
+  ggplot(aes(x = s, y = beta, color = name)) + 
+  facet_grid(.~name, labeller = label_parsed) + 
+  geom_line(linewidth = 1.1) + 
+  labs(x = "Functional domain", 
+       y = "Value", 
+       color = "", 
+       title = "Global intercept and slope functions") +
+  theme(legend.position = "none",
+        strip.text = element_text(family = "sans")  # Use default font for Greek
+  ) +
+  scale_color_paletteer_d("ggthemes::colorblind", direction = -1)
+
+```
+
+## Simulation data generation: add stratum-specific covariate effects 
+
+$\beta_{1(h)}(s) = \gamma_h\cdot\beta_1(s)$
+
+Where $\gamma_h \sim N(1, 0.125^2)$
+
+```{r strata specific slopes}
+#| cache: true 
+
+b1_strat_df |> 
+  pivot_longer(cols = -c(strata, scale),
+               names_to = "l", 
+               names_transform = ~as.integer(sub(".*V", "", .x))) %>% 
+  ggplot(aes(x = l, y = value, color = scale, group = strata)) + 
+  geom_line(linewidth = 1) +
+  scale_color_paletteer_c("ggthemes::Red-Gold") +
+  labs(x = "Functional Domain", y = "Value", title = expression(beta[1(h)](s))) +
+  geom_line(data = btrue_df |> filter(name == "X") |> mutate(strata = 1), 
+            aes(x = s, y = beta, linetype = "Global Slope"), 
+            color = "#2B5C8A", linewidth = 1.1, inherit.aes = FALSE) +
+  scale_linetype_manual(
+    name = "", 
+    values = "dashed",
+    labels = expression("Global slope " * beta[1](s))
+  ) +
+  labs(x = "Functional Domain", y = "Value", title = expression(beta[1(h)](s))) +
+  theme(legend.position = c(0.2, 0.7),
+        title = element_text(family = "sans"),
+        legend.text = element_text(family = "sans", size = 14)) +
+  guides(color = "none")
+```
+
+
+## Simulation data generation: induce strata and cluster-level correlation with functional random effects
+
+Generate strata-level ($b_{h(i)}(s)$) and cluster-level ($b_{c(h, i)}(s)$) random effects using B-spline basis 
+
+Individual-level linear predictor: 
+$\eta_i(s) = \beta_0(s) + X_i\beta_{1(h)}(s) + b_{h(i)}(s) + b_{c(h, i)}(s)$
+
+```{r re plot}
+#| cache: true
+re_df |>
+  filter(strata %in% c(1:10),
+         psu %in% psu_df$x) %>%
+  group_by(strata, psu) %>%
+  slice_sample(n = 100) %>%
+  ungroup() %>%
+  pivot_longer(cols = starts_with("V"),
+               names_to = "ind",
+               names_transform = ~as.integer(sub(".*V", "", .x))) %>%
+  mutate(strata = paste0("Stratum ", strata),
+         strata = factor(strata, levels = paste0("Stratum ", seq(1:10)))) %>%
+  ggplot(aes(x = ind, y = value, color = factor(psu))) +
+  geom_smooth(se = FALSE, linewidth = .7) +
+  facet_wrap(~strata, nrow = 2) +
+  labs(x = "Functional Domain", y = "Value", title = "Random effects by stratum and cluster") +
+  theme(legend.position = "none") +
+  scale_color_viridis_d(option = "A")
+```
+
+## Simulation data generation: induce strata and cluster-level correlation with functional random effects
+
+Generate strata-level ($b_{h(i)}(s)$) and cluster-level ($b_{c(h, i)}(s)$) random effects using B-spline basis 
+
+Individual-level linear predictor: 
+$\eta_i(s) = \beta_0(s) + X_i\beta_{1(h)}(s) + b_{h(i)}(s) + b_{c(h, i)}(s)$
+
+```{r fe plot}
+#| cache: true
+fixef_df |>
+  filter(strata %in% c(1:10),
+         psu %in% psu_df$x) %>%
+  group_by(strata, psu) %>%
+  slice_sample(n = 100) %>%
+  ungroup() %>%
+  pivot_longer(cols = starts_with("V"),
+               names_to = "ind",
+               names_transform = ~as.integer(sub(".*V", "", .x))) %>%
+  mutate(strata = paste0("Stratum ", strata),
+         strata = factor(strata, levels = paste0("Stratum ", seq(1:10)))) %>%
+  ggplot(aes(x = ind, y = value, color = factor(psu))) +
+  geom_smooth(se = FALSE, linewidth = .7) +
+  facet_wrap(~strata, nrow = 2) +
+  labs(x = "Functional Domain", y = "Value", title = "Fixed effects by stratum and cluster") +
+  theme(legend.position = "none") +
+  scale_color_viridis_d(option = "A")
+```
+
+## Simulation data generation: induce strata and cluster-level correlation with functional random effects
+
+Generate strata-level ($b_{h(i)}(s)$) and cluster-level ($b_{c(h, i)}(s)$) random effects using B-spline basis 
+
+Individual-level linear predictor: 
+$\eta_i(s) = \beta_0(s) + X_i\beta_{1(h)}(s) + b_{h(i)}(s) + b_{c(h, i)}(s)$
+
+```{r lp plot}
+#| cache: true
+lp_df |>
+  filter(strata %in% c(1:10),
+         psu %in% psu_df$x) %>%
+  group_by(strata, psu) %>%
+  slice_sample(n = 100) %>%
+  ungroup() %>%
+  pivot_longer(cols = starts_with("V"),
+               names_to = "ind",
+               names_transform = ~as.integer(sub(".*V", "", .x))) %>%
+  mutate(strata = paste0("Stratum ", strata),
+         strata = factor(strata, levels = paste0("Stratum ", seq(1:10)))) %>%
+  ggplot(aes(x = ind, y = value, color = factor(psu))) +
+  geom_smooth(se = FALSE, linewidth = .7) +
+  facet_wrap(~strata, nrow = 2) +
+  labs(x = "Functional Domain", y = "Value", title = "Smoothed linear predictors by stratum and cluster") +
+  theme(legend.position = "none") +
+  scale_color_viridis_d(option = "A")
+
+```
+
+## Simulation data generation: get functional outcomes from linear predictors
+
+$Y_i(s)$ sampled from $\mathcal{N}(\eta_i(s), \sigma^2)$
+
+```{r plot y v2}
+#| cache: true
+y_obs |> 
+  group_by(strata, psu) %>% 
+  slice_sample(n = 100) %>% 
+  ungroup() %>% 
+  pivot_longer(cols = starts_with("V"),
+               names_to = "ind", 
+               names_transform = ~as.integer(sub(".*V", "", .x))) %>% 
+  mutate(strata = paste0("Stratum ", strata),
+         strata = factor(strata, levels = paste0("Stratum ", seq(1:10)))) %>% 
+  ggplot(aes(x = ind, y = value, color = factor(psu))) + 
+  facet_wrap(~strata, nrow = 2) + 
+  geom_smooth(se = FALSE, linewidth = 0.7) + 
+  labs(x = "Functional Domain", y = "Value", title = "Mean smoothed outcomes by stratum and cluster") + 
+  theme(legend.position = "none") +
+  scale_color_viridis_d(option = "A")
+```
+
+# References
