@@ -1,5 +1,5 @@
 ---
-title: "Function on Scalar Regression under Complex Survey Settings"
+title: "Function on Scalar Regression in Complex Survey Settings"
 # title-slide-attributes:
     # data-background-image: figs/koff-talk-ds.png
     # data-background-size: 20%
@@ -24,7 +24,7 @@ format:
     html-math-method: mathjax
     embed-resources: true
     logo: figs/color-screen.png
-    footer: tinyurl.com/uva-stats-0926
+    footer: tinyurl.com/uva-stats
 code: 
   echo: false
   cache: true 
@@ -56,6 +56,7 @@ library(ggimage)
 library(cowplot)
 library(tidyfun)
 library(survminer)
+library(gt)
 options(digits.secs = 3)
 
 ```
@@ -150,6 +151,7 @@ smoothed_points = boot_df %>%
   }) %>%
   filter(s == 1)
 
+edf_fix = read_rds(here::here("data", "smooth_order_fix_edf.rds"))
 ```
 
 
@@ -277,7 +279,7 @@ We're statisticians - we want to quantify this difference - we need to fit a mod
 <div style="font-size: 115%;">
 
 
-Model: $$\mathbb{E}[\mathrm{PA}_i(s)] = \beta_0(s) + \beta_1(s)\mathbb{I}\{\mathrm{sex}_i=\mathrm{female}\} + \sum_{k=2}^{7}\beta_k(s)\mathbb{I}\{\mathrm{agecat}_i=k\} $$ 
+Model: $$\mathbb{E}[\mathrm{PA}_i(s)] = \beta_0(s) + \beta_1(s)\mathbb{I}\{\mathrm{sex}_i=\mathrm{male}\} + \sum_{k=2}^{7}\beta_k(s)\mathbb{I}\{\mathrm{agecat}_i=k\} $$ 
 
 $i$: participant; 
 
@@ -346,18 +348,38 @@ What happens if we ignore?
 
 ::: {.incremental}
 
-+ **No** method exists for function on scalar regression under complex surveys
-
-
 + Ignoring the sampling structure can lead to: 
 
-  + Biased estimates (need to account for weights to make survey look like population) 
-  + Incorrect inference (individuals in same stratum/PSU have correlated data; failure to account can under/overestimate variance) 
+  + Biased **estimation** (need to account for weights to make survey look like population) 
+  + Incorrect **inference** (individuals in same stratum/PSU have correlated data; failure to account can under/overestimate variance) 
+
+
++ **No** method exists for function on scalar regression under complex surveys
+
 
 ::: 
 </div>
 
-# What if we combine some existing methods? 
+## Survey terminology 
+
+<div style="font-size: 135%;">
+
+::: {.incremental}
+
++ Survey weight: number of people in the population represented by the sampled person
+  + $\text{weight} \propto \frac{1}{\text{probability of selection}}$
+  + In complex surveys like NHANES, weights also account for complex, multistage design, nonresponse, and post-stratification to match US population^[https://wwwn.cdc.gov/nchs/nhanes/tutorials/Weighting.aspx]
+  
++ Stratum: larger geographic location 
+
++ Cluster or Primary Sampling Unit (PSU): smaller area within stratum, such as zip code or city block 
+
+
+::: 
+
+</div>
+
+# Proposed solution: let's combine some existing methods 
 
 ## Survey function on scalar regression 
 
@@ -368,7 +390,7 @@ What happens if we ignore?
 
 
 
-+ Standard regression: methods and software to take into accounts weights and correlation between clusters ($\texttt{svyglm}$, $\texttt{svycoxph}$) [@surveys] for estimation and inference
++ GLMs: methods and software exist to take into account weights (estimation) and correlation between clusters for inference ($\texttt{svyglm}$, $\texttt{svycoxph}$) [@surveys] 
 
 + FUI is built on separate GLMs
 
@@ -424,7 +446,9 @@ p <- mims_small |>
             aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = 60, group = frame),
             fill = "#FF2A00FF", alpha = 0.5, inherit.aes = FALSE) +
   labs(x = "Time of Day", y = "MIMS", color = "") +
-  theme(legend.position = "bottom ",
+  theme_minimal(base_family = "sans") +
+  theme(
+        legend.position = "bottom ",
         legend.box.margin = margin(t = 25),  # Space above legend
     plot.margin = margin(20, 20, 30, 30),  # Much more bottom margin
     axis.title.x = element_text(margin = margin(t = 15)),  # Space above x-axis title
@@ -443,7 +467,50 @@ p <- mims_small |>
                      labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
   transition_states(frame, transition_length = 1, state_length = 0)
 
+p <- mims_small |> 
+  pivot_longer(cols = starts_with("min")) |> 
+  mutate(s = as.numeric(sub(".*min\\_", "", name))) |> 
+  ggplot(aes(x = s, y = value, color = SEQN)) +
+  geom_point(size = .3, alpha = .5) +
+  scale_color_paletteer_d("ggthemes::colorblind", name = "",
+                          labels = as.character(seq(1, 8, 1))) +
+  geom_rect(data = rect_data, 
+            aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = 60, group = frame),
+            fill = "#FF2A00FF", alpha = 0.5, inherit.aes = FALSE) +
+  labs(x = "Time of Day", y = "MIMS", color = "") +
+  coord_cartesian(clip = "off") +
+  theme_minimal(base_family = "sans") +
+  theme(
+        legend.position = "bottom ",
+        legend.box.margin = margin(t = 25),  # Space above legend
+    plot.background = element_rect(fill = "#f6f5f3", color = NA),
+      panel.background = element_rect(fill = "#f6f5f3", color = NA),
+      panel.grid.major = element_line(color = "#e1dfdb"),
+      panel.grid.minor = element_blank(),
+      axis.text = element_text(color = "#1a1a1a", size = 12),
+      axis.title = element_text(color = "#1a1a1a", size = 14),
+      plot.title = element_text(face = "bold", size = 18, color = "#000000"),
+      plot.subtitle = element_text(size = 14, color = "#444444"),
+      strip.background = element_rect(fill = "darkgrey", color = NA),
+      strip.text = element_text(color = "white", size = 12),
+    legend.key.width = unit(1.5, "cm"),   # Wider legend keys
+    legend.key.height = unit(0.8, "cm"),  # Taller legend keys
+    legend.text = element_text(margin = margin(r = 10)),  # Space between items
+    legend.spacing.x = unit(0.2, "cm"),   # Horizontal spacing between legend items
+    legend.spacing.y = unit(0.3, "cm")    # Vertical spacing between rows)   # Space right of y-axis title
+  ) + 
+  guides(color = guide_legend(override.aes = list(size = 2, alpha = 1),
+        nrow = 1,
+        keywidth = unit(0.5, "cm"),  # Smaller key boxes
+        keyheight = unit(0.5, "cm"))) +
+  scale_x_continuous(breaks = seq(0, 1440, 240),
+                     labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+  transition_states(frame, transition_length = 1, state_length = 0)
+
 animate(p, end_pause = 10)
+
+
+
 
 ```
 
@@ -489,7 +556,7 @@ male_vec |>
 
 + Standard errors from weighted GLMs don't account for correlation between individuals in same stratum/PSU 
 + Survey-aware replication methods generate $B$ sets of survey weights (analogous to bootstrap replicates), accounting for strata/PSU structure
-+ Fit a model on each bootstrap replicate and estimate standard errors from the replicates 
++ Fit a model on each replicate and estimate standard errors from set of replicates 
 + Two strategies: Rao-Wu-Yue-Beaumont (RWYB) bootstrap [@RWYB] and balanced repeated replication (BRR) [@BRR], we focus on BRR here 
 
 :::
@@ -625,7 +692,7 @@ boot_df |>
   geom_point(data = smoothed_points, aes(x = s, y = smoothed), 
              inherit.aes = FALSE, size = .5) +
   annotate(geom = "label", color = "#FF2A00FF",
-           label = "Estimate variance at each point along the functional domain",
+           label = "Estimate variance of coefficient from point estimates\nat each point along the functional domain",
            x = 60, y = -1, hjust = 0) +
   annotate(geom = "curve", 
            x = 60, xend = 1,           
@@ -664,10 +731,12 @@ male_smooth |>
                      labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
   labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females",
        title = "Estimated coefficient and pointwise 95% confidence intervals") +
-  scale_color_paletteer_c("ggthemes::Red-Gold", name = "Pointwise Variance") +
-  theme(legend.position = c(.75, .75)) +
-    scale_y_continuous(limits = c(-2, 1.1)) +
-  geom_hline(aes(yintercept = 0), linetype = "dashed", color = "slategrey")
+  scale_color_paletteer_c("ggthemes::Red-Gold", name = "Pointwise Variance", limits = c(0, 0.03)) +
+  theme_sub_legend(position = c(0, 0),
+                   justification = c(0, 0),
+                   box.background = element_rect(fill = "#f6f5f3", color = NA)) +
+  scale_y_continuous(limits = c(-2, 1.1)) +
+  geom_hline(aes(yintercept = 0), linetype = "dashed", color = "slategrey") 
 
   
 ```
@@ -720,8 +789,10 @@ male_smooth |>
        title = "Estimated coefficient and 95% confidence intervals") +
   scale_fill_manual(values = c("grey", "#0072B2FF"), name = "") +
   geom_hline(aes(yintercept = 0), linetype = "dashed", color = "slategrey") +
-  theme(legend.position = c(.75, .75)) +
-    scale_y_continuous(limits = c(-2, 1.1))
+  theme_sub_legend(position = c(0, 0),
+                   justification = c(0, 0),
+                   box.background = element_rect(fill = "#f6f5f3", color = NA)) +
+  scale_y_continuous(limits = c(-2, 1.1))
 
 ```
 
@@ -732,8 +803,8 @@ male_smooth |>
 
 ::: {.incremental}
 + Bonferroni gives valid joint coverage, but it is conservative because tests are not independent
-  + $\hat{\beta}_1(8:00\text{am})$ and $\hat{\beta}_1(8:01\text{am})$ are highly correlated 
-+ How can we adjust our CIs to take into account correlation $and$ multiplicity (CMA)? 
+  + $\hat{\beta}(8:00\text{am})$ and $\hat{\beta}(8:01\text{am})$ are highly correlated 
++ How can we adjust our CIs to take into account correlation $and$ multiplicity (CMA)? [@fda_book]
 
 
 :::
@@ -748,7 +819,7 @@ male_smooth |>
 ::: {.incremental}
 
 + The coefficient is jointly significant if the confidence band excludes zero everywhere 
-+ Controlled by the "worst case", where our estimate comes closes to zero 
++ Controlled by the "worst case", where our estimate comes closest to zero 
 + Joint significance $\iff$ all standardized coefficient estimates exceed the critical value in abs. value
 + Under the null, how big does $\max_s |\frac{\hat{\beta}(s)}{SE(s)}|$ get? 
 + Depends on the correlation structure 
@@ -759,20 +830,21 @@ male_smooth |>
 ## Joint inference: CMA 
  
 **Step 1**: recognize that coefficient estimates are multivariate Normal 
-$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}(s_L)\big)^T \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
+$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}_1(s_L)\big)^T \sim \mathcal{N}(\mathbf{f}, \mathbf{V}_f)$$
 
 ## Joint inference: CMA 
  
 **Step 1**: recognize that coefficient estimates are multivariate Normal 
-$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}(s_L)\big)^T \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
+$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}_1(s_L)\big)^T \sim \mathcal{N}(\mathbf{f}, \mathbf{V}_f)$$
 
 **Step 2**: Standardize to get z-scores
 
-$$\mathbf{Z} = \frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \approx N(\mathbf{0}_n, \mathbf{C}_f)$$
-where $\mathbf{D}_f = \sqrt{\text{diag}(\hat{\mathbf{V}}_f)}$ and $\mathbf{C}_f$ is the correlation matrix (estimated from BRR)
+$$\mathbf{Z} = \frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \sim \mathcal{N}(\mathbf{0}, \mathbf{C}_f)$$
+where $\mathbf{D}_f = \sqrt{\text{diag}(\mathbf{V}_f)}$ and $\mathbf{C}_f$ is the correlation matrix, in practice estimated via BRR replicates 
+
 
 ::: {.notes} 
-This correlation matrix $\mathbf{V}_f)$ is what we need to find out CMA critical value 
+This cov matrix $\mathbf{V}_f$ is what we need to find out CMA critical value 
 + Diagonal entries: uncertainty at each time point 
 + Off-diagonal entries: correlation across time points 
 :::
@@ -780,16 +852,16 @@ This correlation matrix $\mathbf{V}_f)$ is what we need to find out CMA critical
 ## Joint inference: CMA 
  
 **Step 1**: recognize that coefficient estimates are multivariate Normal 
-$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}(s_L)\big)^T \approx N(\mathbf{f}, \mathbf{\hat{V}}_f)$$
+$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}_1(s_L)\big)^T \sim \mathcal{N}(\mathbf{f}, \mathbf{V}_f)$$
 
 **Step 2**: Standardize to get z-scores
 
-$$\mathbf{Z} = \frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \approx N(\mathbf{0}_n, \mathbf{C}_f)$$
-where $\mathbf{D}_f = \sqrt{\text{diag}(\hat{\mathbf{V}}_f)}$ and $\mathbf{C}_f$ is the correlation matrix (estimated from BRR)
+$$\mathbf{Z} = \frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \sim \mathcal{N}(\mathbf{0}, \mathbf{C}_f)$$
+where $\mathbf{D}_f = \sqrt{\text{diag}(\mathbf{V}_f)}$ and $\mathbf{C}_f$ is the correlation matrix, in practice estimated via BRR replicates 
 
 **Step 3**: find critical value $q(\mathbf{C}_f, 1-\alpha)$ such that
 
-$$P\big(\max_s|Z_s|\leq q\big) = 0.95  \text{, where } \mathbf{Z} \sim \mathcal{N}(\mathbf{0}, \hat{\mathbf{C}}_f)$$
+$$P\big(\max_s|Z_s|\leq q\big) = 0.95  \text{, where } \mathbf{Z} \sim \mathcal{N}(\mathbf{0}, \mathbf{C}_f)$$
 
 ::: {.notes}
 Use the multivariate normal structure of our estimates. The correlation matrix from BRR tells us how the z-scores at different time points move together. We simulate from this distribution and find the 95th percentile of the max - that's the critical value. Best of both worlds b/w bonferroni and pointwise.
@@ -797,8 +869,9 @@ Use the multivariate normal structure of our estimates. The correlation matrix f
 
 ## Joint inference: CMA 
 
+<div style="font-size: 90%;">
 Bonferroni critical value = $3.98$; CMA critical value = $3.03$; pointwise critical value = $1.96$
-
+</div> 
 
 ```{r cma}
 #| cache: true 
@@ -825,14 +898,15 @@ male_smooth |>
   labs(x = "Time of Day", y = "Difference in MIMS: Males minus Females",
        title = "Estimated coefficient and 95% confidence intervals") +
   scale_fill_manual(values = c("grey", "#56B4E9FF", "#0072B2FF"), name = "") +
-  theme(legend.position = c(.75, .85)) +
+  theme_sub_legend(position = c(0, 0),
+                   justification = c(0, 0),
+                   box.background = element_rect(fill = "#f6f5f3", color = NA)) +
     scale_y_continuous(limits = c(-2, 1.1)) +
     geom_hline(aes(yintercept = 0), linetype = "dashed", color = "slategrey") 
 
 
 ```
 
-<div style=" position: absolute; bottom: 0.5em; right: -4em; font-size: 0.7em; color: #777; "> @fda_book </div>
 
 ## Final result
 
@@ -840,7 +914,7 @@ male_smooth |>
 #| cache: true 
 
 plt_df |> 
-  mutate(var_name = factor(var_name, labels = c("Intercept", "Male"))) |> 
+  mutate(var_name = factor(var_name, labels = c("Intercept", "Male minus Female"))) |> 
   ggplot(aes(x = l, y = beta_hat)) +
   facet_wrap(.~var_name, scales = "free_y") +
   geom_ribbon(aes(x = l, ymin = lower_joint, ymax = upper_joint, fill = "Joint")) +
@@ -865,12 +939,11 @@ plt_df |>
 ::: {.incremental}
 
 + Generate a superpopulation of individuals who belong to a stratum and cluster 
-+ Each individual has functional outcome and covariate
++ Each individual has functional outcome and covariate^[More details in [Appendix](#sec-appendix)]
 + [Optionally] create correlation in functional outcomes within strata and clusters
 + [Optionally] create heterogeneity in covariate effects by strata/cluster
 + Sample from the superpopulation in each iteration of the simulation
   + [Optionally] allow for informative sampling: probability of being included in sample related to functional outcome 
-+ Details in Appendix
 + Evaluate coverage and estimation error (integrated squared error; ISE = $\int_s \{\hat{\beta}(s) - \beta(s)\}^2ds$)
 
 :::
@@ -901,19 +974,18 @@ y_obs |>
 
 
 ## Survey sampling: sample individuals from superpopulation 
-1. Sample two clusters from each stratum
-2. Sample individuals from each cluster 
-3. Informative sampling: allow selection probability to depend on functional outcome: $\pi_i \propto \frac{1}{L}\sum_{s=1}^LY_i(s)$
+Informative sampling: allow selection probability to depend on functional outcome: $\pi_i \propto \frac{1}{L}\sum_{s=1}^LY_i(s)$
 
 ```{r plot surv wts}
 #| cache: true
 mean_df %>%
   ggplot() +
   geom_spaghetti(aes(y = Y_mean_strat, color = quant), linewidth = 2, alpha = 1) +
-  scale_color_manual(name = "Selection probability\ntertile",
+  scale_color_manual(name = "Selection probability tertile",
                      values = c("#FF2B00FF", "#FF9933FF", "#002BFFFF"),
                      labels = c("Highest third", "Middle third", "Lowest third")) +
-  labs(x = "Functional domain", y = "Smoothed functional outcome", title = "Selection probability and functional outcomes under informative sampling") 
+  labs(x = "Functional domain", y = "Smoothed functional outcome", title = "Selection probability and functional outcomes under informative sampling") +
+  theme(legend.position = "bottom")
 ```
 
 
@@ -1034,14 +1106,26 @@ res |>
 ## Simulation summary 
 
 <div style="font-size: 120%">
+
 ::: {.incremental}
-+ Unweighted only achieves adequate coverage for intercept and coefficient w/ uniform sampling and no stratum/PSU random effects
-+ Survey method achieves adequate coverage and lower bias than unweighted methods under informative sampling and/or stratum/PSU effects
-+ With informative sampling but minimal stratum/PSU effects, BRR and weighted bootstrap for inference perform similarly 
-+ Results hold for Gaussian and non-Gaussian data
++ Unweighted only achieves adequate coverage/comparable estimation error w/ uniform sampling and no stratum/PSU random effects
++ Our method achieves adequate coverage and lower bias than unweighted methods under informative sampling and/or stratum/PSU effects
++ Results hold for Gaussian, Poisson, and binomial data
 + Empirical simulation resampling NHANES curves validated results 
 
 :::
+</div> 
+
+## Assumptions 
+
+<div style="font-size: 120%">
+
+**Survey design** 
+
++ Survey weights are bounded 
++ Inclusion probabilities are positive and correctly specified 
++ For BRR: two PSUs per stratum
+
 </div> 
 
 ## Assumptions 
@@ -1061,6 +1145,17 @@ res |>
 + Functional outcomes $Y_i(s)$ are independent conditional on covariates and survey design
 
 </div> 
+
+## Asymptotics
+<div style="font-size: 120%">
+
+**Consistency**
+
+  + Survey-weighted pointwise estimator $\hat{\beta}(s)$ is consistent for the population parameter $\beta(s)$
+  + Smoothed estimator $\tilde{\beta}(s)$ is consistent for $\beta(s)$ provided that smoothing parameter $\lambda$ approaches zero at the appropriate rate
+  
+</div>
+
 ## Asymptotics
 <div style="font-size: 120%">
 
@@ -1085,7 +1180,7 @@ plt_ov =
   plt_df |> 
   mutate(model = "BRR") |> 
   bind_rows(plt_df_unwtd |>  mutate(model = "Unweighted")) |> 
-  mutate(var_name = if_else(grepl("Male", var_name), "Male", "Intercept")) |> 
+  mutate(var_name = if_else(grepl("Male", var_name), "Male minus Female", "Intercept")) |> 
   mutate(model2 = factor(model, levels = c("Unweighted", "BRR"),
                         labels = c("Unweighted", "Survey-aware")))
 
@@ -1106,13 +1201,13 @@ disagree_df =
   filter(disagree) 
 
 annotation_data = tibble(
-  var_name = "Male",
+  var_name = "Male minus Female",
   x_label = c(3 * 60, 21 * 60),  # Left and right sides
   y_label = c(-1.5, -1.7),
   # x_arrow_start = c(3 * 60, 18 * 60),
   # x_arrow_end = c(1.5 * 60, 16.2 * 60),
   # y_arrow_end = c(-1.8, -2),
-  x_arrow_start = c(4 * 60, 18 * 60),
+  x_arrow_start = c(4 * 60, 21.2 * 60),
   x_arrow_end = c(6 * 60, 23.2 * 60),
   y_arrow_end = c(-1.8, -2),
   label = c("Only survey-aware\npointwise significant",
@@ -1123,14 +1218,46 @@ annotation_data = tibble(
 
 # annotation_data = annotation_data |> slice(1)
 
-ggplot(plt_ov, aes(x = l, y = beta_hat, group = model2)) +
+p = ggplot(plt_ov, aes(x = l, y = beta_hat, group = model2)) +
     facet_wrap(. ~ var_name, scales = "free_y") +
     geom_ribbon(aes(x = l, ymin = lower_pw, ymax = upper_pw, fill = model2), alpha = .5) +
     geom_ribbon(aes(x = l, ymin = lower_joint, ymax = upper_joint, fill = model2), alpha = .3) +
     geom_line(aes(color = model2), linewidth = 1.1)  +
     geom_hline(
       color = "slategrey",
-      data = tibble(var_name = "Male"),
+      data = tibble(var_name = "Male minus Female"),
+      aes(yintercept = 0),
+      linetype = "dashed"
+    ) +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF")) +
+  scale_color_manual(values = c("#009E73FF", "#CC79A7FF")) +
+    scale_x_continuous(breaks= seq(0, 1440, 4 * 60), labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
+    labs(x = "Time of Day", y = "Coefficient Estimate", fill = "Model Type", color = "Model Type") +
+    geom_rect(data = disagree_df %>% filter(!brr_sig),
+              aes(x = l, y = -2, height = .5, width = 1), fill = "#009E73FF", inherit.aes = FALSE) +
+    geom_rect(data = disagree_df %>% filter(brr_sig),
+              aes(x = l, y = -2, height = .5, width = 1), fill = "#CC79A7FF", inherit.aes = FALSE) +
+  geom_text(data = annotation_data,
+            aes(x = x_label, y = y_label, label = label, hjust = hjust),
+            color = annotation_data$color,
+            vjust = 0, size = 3,
+            inherit.aes = FALSE) +
+  geom_segment(data = annotation_data,
+               aes(x = x_arrow_start, xend = x_arrow_end, 
+                   y = y_label, yend = y_arrow_end),
+               arrow = arrow(length = unit(0.2, "cm"), type = "closed"),
+               color = annotation_data$color,
+               inherit.aes = FALSE) +
+  theme(legend.position = "bottom")
+
+ggplot(plt_ov, aes(x = l, y = beta_hat, group = model2)) +
+    facet_wrap(. ~ var_name, scales = "free_y") +
+    geom_ribbon(aes(x = l, ymin = lower_pw, ymax = upper_pw, fill = model2), alpha = .5) +
+    # geom_ribbon(aes(x = l, ymin = lower_joint, ymax = upper_joint, fill = model2), alpha = .3) +
+    geom_line(aes(color = model2), linewidth = 1.1)  +
+    geom_hline(
+      color = "slategrey",
+      data = tibble(var_name = "Male minus Female"),
       aes(yintercept = 0),
       linetype = "dashed"
     ) +
@@ -1185,7 +1312,7 @@ model_fit = svyfosr::svyfui(steps_mat ~ age + sex,
 </div>
 ![](figs/logo.png){width=20%}
 
-<div style=" position: absolute; bottom: 0.5em; right: -4em; font-size: 0.7em; color: #777; "> @svy_package </div>
+<div style=" position: absolute; bottom: 2em; right: -4em; font-size: 0.7em; color: #777; "> @svy_package </div>
 
 ## Computation 
 
@@ -1209,13 +1336,14 @@ model_fit = svyfosr::svyfui(steps_mat ~ age + sex,
 
 ## Summary
 
-<div style="font-size: 115%;">
+<div style="font-size: 135%;">
 
 ::: {.incremental}
 
 + Developed a method for function on scalar regression under complex survey designs, motivated by physical activity in NHANES
-+ Demonstrated this is important to account for under informative sampling, or strong within-PSU/strata covariate effects and/or correlation 
-+ Computationally efficient software for implementation: Gaussian, Poisson, and binomial data 
++ Demonstrated importance of approach in presence of informative sampling, within-PSU/strata covariate effects, and/or within-PSU/strata correlation
++ Computationally efficient software for implementation, support for Gaussian, Poisson, and binomial data 
++ Paper on [arXiv](https://arxiv.org/abs/2511.05487)
 
 ::: 
 
@@ -1223,7 +1351,7 @@ model_fit = svyfosr::svyfui(steps_mat ~ age + sex,
 
 ## Limitations and Future Directions 
 
-<div style="font-size: 115%;">
+<div style="font-size: 135%;">
 
 ::: {.incremental}
 
@@ -1235,7 +1363,7 @@ model_fit = svyfosr::svyfui(steps_mat ~ age + sex,
 
 </div> 
 
-# Appendix
+# Appendix {#sec-appendix}
 
 ## Simulation data generation
 
@@ -1399,6 +1527,224 @@ y_obs |>
   labs(x = "Functional Domain", y = "Value", title = "Mean smoothed outcomes by stratum and cluster") + 
   theme(legend.position = "none") +
   scale_color_viridis_d(option = "A")
+```
+
+## Smoothing order
+
++ Our approach is to fit pointwise models, then smooth coefficients
++ An alternative approach would be to smooth outcomes first, then fit pointwise models to the smoothed data
++ With Gaussian data and same linear smoother, approaches are equivalent
++ Difference is in how the smoothing parameter $\lambda$ is selected
++ When smoothing applied to coefficients, whose pointwise variance is $\sigma^2/n$, GCV selects smaller smoothing parameter as $n$ grows, ensuring the estimator is consistent
++ When smoothing is applied to outcomes, pointwise variance is $\sigma^2$, $O(1)$ bias is introduced that doesn't change with sample size
++ If the smooth applied to the outcomes is calibrated to have the same EDF as the smooth applied to the coefficients, comparable performance can be achieved between the two approaches
++ The next few slides illustrate this phenomenon
+
+## Smoothing order 
+
+```{r}
+#| cache: true 
+#| out-width: "100%"
+
+
+edf_fix |>
+  group_by(n) |>
+  summarize(across(contains("edf"), first)) |> 
+  select(n, sf_edf, ss_edf) |> 
+  rename("Sample size" = n,
+         "Mean EDF, smooth first" = sf_edf,
+         "Mean EDF, smooth second" = ss_edf) |> 
+  gt::gt() |> 
+  gt::fmt_number(columns = -c("Sample size"), decimals = 2) |> 
+  gt::tab_header(title = "Mean smoother EDF across 200 iterations", subtitle = "Varying sample size and smooth order") |> 
+  gt::tab_options(
+    table.font.size = px(30),
+    heading.title.font.size = px(35),
+    column_labels.font.size = px(30),
+    table.width = pct(95),
+    table.background.color = "#f6f5f3"
+  )
+
+```
+
+## Smoothing order
+
+```{r edf1}
+#| cache: true 
+
+
+L = 50
+grid  = seq(0, 1, length = L)
+beta_fixed  = matrix(NA, 2, L)
+beta_fixed[1, ]  = -0.15 - 0.1 * sin(2 * pi * grid) - 0.1 * cos(2 * pi * grid)
+beta_fixed[2, ]  = dnorm(grid, 0.6, 0.15) / 20
+
+bt_df =
+  beta_fixed |>
+  as_tibble() |>
+  mutate(var = c("b0", "b1")) |>
+  pivot_longer(cols = -var, names_to = "s", names_transform = ~as.numeric(sub(".*V", "", .x)))
+
+
+
+
+p1 =
+  edf_fix |>
+  pivot_longer(cols = contains("b")) |>
+  filter(grepl("bias", name)) |>
+  separate_wider_delim(cols = name, delim = "_", names = c("smooth_order", "xx", "var")) |>
+  filter(var == "b1") |>
+  mutate(smooth_order = factor(smooth_order, levels = c("sf", "ss", "sff"), labels = c("Smooth first", "Smooth second", "Smooth first calibrated EDF"))) |>
+  ggplot(aes(x = s, y = value, color = factor(n))) +
+  geom_line() +
+  facet_wrap(.~smooth_order, scales = "free_y") +
+  labs(x = "Functional Domain", y = "Bias", title = bquote("Bias for"~beta[1])) +
+  geom_hline(aes(yintercept = 0), linetype = "dashed", color = "darkgrey") +
+  # scale_color_viridis_d(name = "Sample size", option = "B") +
+  scale_color_manual(values = c("#FF7F00FF", "#19B2FFFF", "#654CFFFF"), name = "Sample Size") +
+  theme(legend.position = "bottom") +
+  theme(title = element_text(family = "sans"))
+
+p2 =
+  edf_fix |>
+  pivot_longer(cols = contains("b")) |>
+  filter(grepl("bias", name)) |>
+  separate_wider_delim(cols = name, delim = "_", names = c("smooth_order", "xx", "var")) |>
+  filter(var == "b0") |>
+  mutate(smooth_order = factor(smooth_order, levels = c("sf", "ss", "sff"), labels = c("Smooth first", "Smooth second", "Smooth first calibrated EDF"))) |>
+  ggplot(aes(x = s, y = value, color = factor(n))) +
+  geom_line() +
+  facet_wrap(.~smooth_order, scales = "free_y") +
+  labs(x = "Functional Domain", y = "Bias", title = bquote("Bias for"~beta[0])) +
+  geom_hline(aes(yintercept = 0), linetype = "dashed", color = "darkgrey") +
+  # scale_color_viridis_d(name = "Sample size", option = "B") +
+  scale_color_manual(values = c("#FF7F00FF", "#19B2FFFF", "#654CFFFF"), name = "Sample Size") +
+  theme(legend.position = "bottom") +
+  theme(title = element_text(family = "sans"))
+
+
+
+p2
+```
+
+## Smoothing order
+
+```{r}
+p1
+```
+
+## Smoothing order 
+
+```{r smooth2}
+#| cache: true 
+
+# First, get the bias data and determine scaling
+bias_data = edf_fix |>
+  filter(n == 1000) |>
+  select(s, contains("bias")) |>
+  pivot_longer(cols = -s) |>
+  separate_wider_delim(cols = name, delim = "_", names = c("smooth_order", "xx", "var")) |>
+  filter(var == "b1")
+
+# Scaling parameters: map bias range to ~[0, 0.5] so it doesn't overlap too much with coverage
+bias_range = range(bias_data$value)
+scale_factor = 0.4 / max(abs(bias_range))  # scale to fit in lower part of plot
+offset = 0.5  # center the bias around 0.5 on the primary axis
+
+# Coverage data
+cover_data = edf_fix |>
+  filter(n == 1000) |>
+  select(s, contains("cover")) |>
+  pivot_longer(cols = -s) |>
+  separate_wider_delim(cols = name, delim = "_", names = c("smooth_order", "xx", "var")) |>
+  filter(var == "b1")
+
+# Plot
+p1 = ggplot() +
+  # Coverage lines (primary axis)
+  geom_line(data = cover_data,
+            aes(x = s, y = value, color = smooth_order),
+            linewidth = 1) +
+  # Bias lines (scaled to primary axis)
+  geom_line(data = bias_data,
+            aes(x = s, y = value * scale_factor + offset, linetype = smooth_order),
+            color = "grey40", linewidth = 0.8) +
+  scale_color_manual(values = c("#E69F00FF", "#0072B2FF", "#009E73FF"), name = "Coverage",
+                     labels = c("Smooth first", "Smooth second", "Smooth first calibrated EDF")) +
+  scale_linetype_manual(values = c("solid", "dashed", "dotted"), name = "Bias",
+                        labels = c("Smooth first", "Smooth second", "Smooth first calibrated EDF")) +
+  scale_y_continuous(
+    name = "Pointwise coverage",
+    limits = c(0, 1),
+    sec.axis = sec_axis(~ (. - offset) / scale_factor, name = "Bias")
+  ) +
+  labs(x = "Functional Domain",
+       title = bquote("Empirical coverage for" ~ beta[1] ~ "at n = 1000")) +
+  geom_hline(yintercept = 0.95, color = "darkgrey", linetype = "dashed") +
+  geom_hline(yintercept = offset, color = "grey40", linetype = "dotted", alpha = 0.5) +  # zero line for bias
+  annotate(geom = "text", label = "Nominal = 0.95", x = 5, y = 0.95,
+           color = "darkgrey", size = 3, vjust = -1) +
+  theme(legend.position = "bottom") +
+  theme(title = element_text(family = "sans"))
+
+bias_data = edf_fix |>
+  filter(n == 1000) |>
+  select(s, contains("bias")) |>
+  pivot_longer(cols = -s) |>
+  separate_wider_delim(cols = name, delim = "_", names = c("smooth_order", "xx", "var")) |>
+  filter(var == "b0")
+
+# Scaling parameters: map bias range to ~[0, 0.5] so it doesn't overlap too much with coverage
+bias_range = range(bias_data$value)
+scale_factor = 0.4 / max(abs(bias_range))  # scale to fit in lower part of plot
+offset = 0.5  # center the bias around 0.5 on the primary axis
+
+# Coverage data
+cover_data = edf_fix |>
+  filter(n == 1000) |>
+  select(s, contains("cover")) |>
+  pivot_longer(cols = -s) |>
+  separate_wider_delim(cols = name, delim = "_", names = c("smooth_order", "xx", "var")) |>
+  filter(var == "b0")
+
+# Plot
+p2 = ggplot() +
+  # Coverage lines (primary axis)
+  geom_line(data = cover_data,
+            aes(x = s, y = value, color = smooth_order),
+            linewidth = 1) +
+  # Bias lines (scaled to primary axis)
+  geom_line(data = bias_data,
+            aes(x = s, y = value * scale_factor + offset, linetype = smooth_order),
+            color = "grey40", linewidth = 0.8) +
+  scale_color_manual(values = c("#E69F00FF", "#0072B2FF", "#009E73FF"), name = "Coverage",
+                     labels = c("Smooth first", "Smooth second", "Smooth first calibrated EDF")) +
+  scale_linetype_manual(values = c("solid", "dashed", "dotted"), name = "Bias",
+                        labels = c("Smooth first", "Smooth second", "Smooth first calibrated EDF")) +
+  scale_y_continuous(
+    name = "Pointwise coverage",
+    limits = c(0, 1),
+    sec.axis = sec_axis(~ (. - offset) / scale_factor, name = "Bias")
+  ) +
+  labs(x = "Functional Domain",
+       title = bquote("Empirical coverage for" ~ beta[0] ~ "at n = 1000")) +
+  geom_hline(yintercept = 0.95, color = "darkgrey", linetype = "dashed") +
+  geom_hline(yintercept = offset, color = "grey40", linetype = "dotted", alpha = 0.5) +  # zero line for bias
+  annotate(geom = "text", label = "Nominal = 0.95", x = 5, y = 0.95,
+           color = "darkgrey", size = 3, vjust = -1) +
+  theme(legend.position = "bottom") +
+  theme(title = element_text(family = "sans"))
+
+p2
+
+
+
+```
+
+## Smoothing order
+
+```{r}
+p1 
 ```
 
 # References
