@@ -322,7 +322,9 @@ Could also fit with penalized splines
 
 :::
 
-# Gap: no method to adjust for survey design
+# 
+
+![](figs/Traffic-Signal-Stop-Sign-PNG.png)
 
 ## NHANES is not a random sample! 
 
@@ -819,10 +821,10 @@ male_smooth |>
 ::: {.incremental}
 
 + The coefficient is jointly significant if the confidence band excludes zero everywhere 
-+ Controlled by the "worst case", where our estimate comes closest to zero 
 + Joint significance $\iff$ all standardized coefficient estimates exceed the critical value in abs. value
-+ Under the null, how big does $\max_s |\frac{\hat{\beta}(s)}{SE(s)}|$ get? 
-+ Depends on the correlation structure 
++ Under the null, how big would the largest $|z|$ get? 
++ Want to find critical value $q$ that largest $|z|$ exceeds only $5$\% of the time under the null
++ Depends on the correlation of our coefficients  
 :::
 
 </div>
@@ -830,21 +832,21 @@ male_smooth |>
 ## Joint inference: CMA 
  
 **Step 1**: recognize that coefficient estimates are multivariate Normal 
-$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}_1(s_L)\big)^T \sim \mathcal{N}(\mathbf{f}, \mathbf{V}_f)$$
+$$\hat{\boldsymbol{\beta}} = \big(\hat{\beta}(s_1), \hat{\beta}(s_2), \dots, \hat{\beta}(s_L)\big)^T \sim \mathcal{N}(\boldsymbol{\beta}, \mathbf{V}_\beta)$$
 
 ## Joint inference: CMA 
  
 **Step 1**: recognize that coefficient estimates are multivariate Normal 
-$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}_1(s_L)\big)^T \sim \mathcal{N}(\mathbf{f}, \mathbf{V}_f)$$
+$$\hat{\boldsymbol{\beta}} = \big(\hat{\beta}(s_1), \hat{\beta}(s_2), \dots, \hat{\beta}(s_L)\big)^T \sim \mathcal{N}(\boldsymbol{\beta}, \mathbf{V}_\beta)$$
 
 **Step 2**: Standardize to get z-scores
 
-$$\mathbf{Z} = \frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \sim \mathcal{N}(\mathbf{0}, \mathbf{C}_f)$$
-where $\mathbf{D}_f = \sqrt{\text{diag}(\mathbf{V}_f)}$ and $\mathbf{C}_f$ is the correlation matrix, in practice estimated via BRR replicates 
+$$\mathbf{Z} = \frac{(\hat{\boldsymbol{\beta}} - \boldsymbol{\beta})}{\mathbf{D}_\beta} \sim \mathcal{N}(\mathbf{0}, \mathbf{C}_\beta)$$
+where $\mathbf{D}_\beta = \sqrt{\text{diag}(\mathbf{V}_\beta)}$ and $\mathbf{C}_\beta$ is the correlation matrix, in practice estimated via BRR replicates 
 
 
 ::: {.notes} 
-This cov matrix $\mathbf{V}_f$ is what we need to find out CMA critical value 
+This cov matrix $\mathbf{V}_\beta$ is what we need to find out CMA critical value 
 + Diagonal entries: uncertainty at each time point 
 + Off-diagonal entries: correlation across time points 
 :::
@@ -852,19 +854,21 @@ This cov matrix $\mathbf{V}_f$ is what we need to find out CMA critical value
 ## Joint inference: CMA 
  
 **Step 1**: recognize that coefficient estimates are multivariate Normal 
-$$\hat{\mathbf{f}} = \big(\hat{\beta}_1(s_1), \hat{\beta}_1(s_2), \dots, \hat{\beta}_1(s_L)\big)^T \sim \mathcal{N}(\mathbf{f}, \mathbf{V}_f)$$
+$$\hat{\boldsymbol{\beta}} = \big(\hat{\beta}(s_1), \hat{\beta}(s_2), \dots, \hat{\beta}(s_L)\big)^T \sim \mathcal{N}(\boldsymbol{\beta}, \mathbf{V}_\beta)$$
 
 **Step 2**: Standardize to get z-scores
 
-$$\mathbf{Z} = \frac{(\hat{\mathbf{f}} - \mathbf{f})}{\mathbf{D}_f} \sim \mathcal{N}(\mathbf{0}, \mathbf{C}_f)$$
-where $\mathbf{D}_f = \sqrt{\text{diag}(\mathbf{V}_f)}$ and $\mathbf{C}_f$ is the correlation matrix, in practice estimated via BRR replicates 
+$$\mathbf{Z} = \frac{(\hat{\boldsymbol{\beta}} - \boldsymbol{\beta})}{\mathbf{D}_\beta} \sim \mathcal{N}(\mathbf{0}, \mathbf{C}_\beta)$$
+where $\mathbf{D}_\beta = \sqrt{\text{diag}(\mathbf{V}_\beta)}$ and $\mathbf{C}_\beta$ is the correlation matrix, in practice estimated via BRR replicates 
 
-**Step 3**: find critical value $q(\mathbf{C}_f, 1-\alpha)$ such that
+**Step 3**: find critical value $q(\mathbf{C}_\beta, 1-\alpha)$ such that
 
-$$P\big(\max_s|Z_s|\leq q\big) = 0.95  \text{, where } \mathbf{Z} \sim \mathcal{N}(\mathbf{0}, \mathbf{C}_f)$$
+$$P\big(\max_s|Z_s|\leq q\big) = 1-\alpha  \text{, where } \mathbf{Z} \sim \mathcal{N}(\mathbf{0}, \mathbf{C}_\beta)$$
 
 ::: {.notes}
-Use the multivariate normal structure of our estimates. The correlation matrix from BRR tells us how the z-scores at different time points move together. We simulate from this distribution and find the 95th percentile of the max - that's the critical value. Best of both worlds b/w bonferroni and pointwise.
+Use the multivariate normal structure of our estimates. The correlation matrix from BRR tells us how the z-scores at different time points move together. We simulate from this distribution and find the 95th percentile of the max - that's the critical value. Best of both worlds b/w bonferroni and pointwise. Find q using quantile fn from multivariate Normal distribution, or simulate. 
+
+Other approaches: parameter simulations, nonparametric bootstrap of max abs statistic
 ::: 
 
 ## Joint inference: CMA 
@@ -924,7 +928,7 @@ plt_df |>
   scale_fill_manual(values = c("Joint" = "#56B4E9", "Pointwise" =  "#0072B2"), name = "Confidence Interval") +
   scale_x_continuous(breaks = seq(0, 1440, 240),
                      labels = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00")) +
-  geom_hline(data = plt_df |> mutate(var_name = factor(var_name, labels = c("Intercept", "Male"))) |> filter(var_name == "Male"),
+  geom_hline(data = plt_df |> mutate(var_name = factor(var_name, labels = c("Intercept", "Male minus Female"))) |> filter(var_name == "Male minus Female"),
              aes(yintercept = 0), col = "slategrey", linetype = 2) +
   theme(legend.position = "bottom")
 
@@ -1032,7 +1036,7 @@ res |>
 
 ## Estimation error: coefficient
 
-```{r}
+```{r ee}
 #| cache: true
 
 res |>
@@ -1368,7 +1372,7 @@ model_fit = svyfosr::svyfui(steps_mat ~ age + sex,
 ## Simulation data generation
 
 
-```{r}
+```{r x1}
 #| cache: true
 btrue_df %>% 
   mutate(name = factor(name, 
@@ -1542,7 +1546,7 @@ y_obs |>
 
 ## Smoothing order 
 
-```{r}
+```{r so}
 #| cache: true 
 #| out-width: "100%"
 
@@ -1629,7 +1633,8 @@ p2
 
 ## Smoothing order
 
-```{r}
+```{r xxx}
+#| cache: true 
 p1
 ```
 
@@ -1743,7 +1748,8 @@ p2
 
 ## Smoothing order
 
-```{r}
+```{r oo2}
+#| cache: true
 p1 
 ```
 
