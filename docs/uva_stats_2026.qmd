@@ -557,7 +557,7 @@ male_vec |>
 + Standard errors from weighted GLMs don't account for correlation between individuals in same stratum/PSU 
 + Survey-aware replication methods generate $B$ sets of survey weights (analogous to bootstrap replicates), accounting for strata/PSU structure
 + Fit a model on each replicate and estimate standard errors from set of replicates 
-+ Two strategies: Rao-Wu-Yue-Beaumont (RWYB) bootstrap [@RWYB] and balanced repeated replication (BRR) [@BRR], we focus on BRR here 
++ Several methods exist, we focus on balanced repeated replication (BRR) [@BRR]
 
 :::
 
