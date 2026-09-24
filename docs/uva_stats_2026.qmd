@@ -78,8 +78,10 @@ theme_set(
       panel.background = element_rect(fill = "#f6f5f3", color = NA),
       panel.grid.major = element_line(color = "#e1dfdb"),
       panel.grid.minor = element_blank(),
-      axis.text = element_text(color = "#1a1a1a", size = 12),
+      axis.text = element_text(color = "#1a1a1a", size = 13),
       axis.title = element_text(color = "#1a1a1a", size = 14),
+      legend.title = element_text(size = 14),
+      legend.text = element_text(size = 13),
       plot.title = element_text(face = "bold", size = 18, color = "#000000"),
       plot.subtitle = element_text(size = 14, color = "#444444"),
       strip.background = element_rect(fill = "darkgrey", color = NA),
@@ -793,8 +795,7 @@ male_smooth |>
   geom_hline(aes(yintercept = 0), linetype = "dashed", color = "slategrey") +
   theme_sub_legend(position = c(0, 0),
                    justification = c(0, 0),
-                   box.background = element_rect(fill = "#f6f5f3", color = NA),
-                   text = element_text(size = 14)) +
+                   box.background = element_rect(fill = "#f6f5f3", color = NA)) +
   scale_y_continuous(limits = c(-2, 1.1))
 
 ```
@@ -910,8 +911,7 @@ male_smooth |>
   scale_fill_manual(values = c("grey", "#56B4E9FF", "#0072B2FF"), name = "") +
   theme_sub_legend(position = c(0, 0),
                    justification = c(0, 0),
-                   box.background = element_rect(fill = "#f6f5f3", color = NA),
-                   text = element_text(size = 14)) +
+                   box.background = element_rect(fill = "#f6f5f3", color = NA)) +
     scale_y_continuous(limits = c(-2, 1.1)) +
     geom_hline(aes(yintercept = 0), linetype = "dashed", color = "slategrey") 
 
