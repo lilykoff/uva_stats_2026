@@ -752,11 +752,11 @@ male_smooth |>
 + Pointwise intervals ask "are females more active than males at 8AM?"
 
 
-+ Might also want a confidence band for the true function across all $s$ 
++ Might also want a confidence band for the true function across entire functional domain
 
 
 + We have a multiplicity problem if we use the pointwise intervals: we're doing $1440$ tests
-  + Very high probability of at least one false positive under the null 
+  
 
 ::: 
 
@@ -793,7 +793,8 @@ male_smooth |>
   geom_hline(aes(yintercept = 0), linetype = "dashed", color = "slategrey") +
   theme_sub_legend(position = c(0, 0),
                    justification = c(0, 0),
-                   box.background = element_rect(fill = "#f6f5f3", color = NA)) +
+                   box.background = element_rect(fill = "#f6f5f3", color = NA),
+                   text = element_text(size = 14)) +
   scale_y_continuous(limits = c(-2, 1.1))
 
 ```
@@ -824,11 +825,11 @@ male_smooth |>
 
 + We could think of a z-score at each time point: $\frac{\hat{\beta}(s) - \beta(s)}{SE_{\beta(s)}}$
 
-+ We want to find a critical value $q$ where probability that all $|Z_s| \leq q$ is $0.95$
++ We want to find a critical value $q$ where probability that all z-scores are less than $q$ in absolute value is $1-\alpha$
 
-+ Equivalent to the max z-score being less than $q$
++ Equivalent to the max absolute z-score being less than $q$
 
-+ Value of $q$ depends on correlation between coefficients
++ Value of $q$ depends on correlation between coefficients across domain
 
 :::
 
@@ -909,7 +910,8 @@ male_smooth |>
   scale_fill_manual(values = c("grey", "#56B4E9FF", "#0072B2FF"), name = "") +
   theme_sub_legend(position = c(0, 0),
                    justification = c(0, 0),
-                   box.background = element_rect(fill = "#f6f5f3", color = NA)) +
+                   box.background = element_rect(fill = "#f6f5f3", color = NA),
+                   text = element_text(size = 14)) +
     scale_y_continuous(limits = c(-2, 1.1)) +
     geom_hline(aes(yintercept = 0), linetype = "dashed", color = "slategrey") 
 
@@ -1031,7 +1033,8 @@ res |>
   scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Estimation") +
   labs(x = "Strata and cluster-level effects?", y = expression("Estimation error ("*log[10]*" ISE)")) +
   scale_x_discrete(labels = c("No", "Yes")) +
-  facet_grid(.~inf_level) 
+  facet_grid(.~inf_level) +
+  theme(legend.position = "bottom")
 
 
 
@@ -1058,7 +1061,8 @@ res |>
   scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Estimation") +
   labs(x = "Strata and cluster-level effects?", y = expression("Estimation error ("*log[10]*" ISE)")) +
   scale_x_discrete(labels = c("No", "Yes")) +
-  facet_grid(.~inf_level) 
+  facet_grid(.~inf_level) +
+  theme(legend.position = "bottom")
 
 
 ```
@@ -1073,17 +1077,18 @@ res |>
          snr_eps == 1, inf_level %in% c(0, 15)) |>
   mutate(boot_type = factor(boot_type, levels = c("unweighted", "BRR"), labels = c("Unweighted", "Survey-aware")),
          inf_level = factor(inf_level, levels = c("0", "15"),
-                            labels = c("Uniform", "Informative"))) |> 
+                            labels = c("Sampling: Uniform", "Sampling: Informative"))) |> 
   filter((strata_scale > 0 & strata_sigma > 0 & snr_b == 0.5) | (strata_scale == 0 & strata_sigma == 0)) |>
   mutate(re = if_else(strata_scale > 0 & strata_sigma > 0, "re", "nore")) |>
   ggplot(aes(x = re, y = cover_pw/len, fill = boot_type)) +
   geom_boxplot(staple.color = "black", staplewidth = .1) +
-  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation") +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference and Estimation") +
   labs(x = "Strata and cluster-level effects?", y = "Pointwise coverage") +
   facet_grid(.~inf_level) +
   scale_x_discrete(labels = c("No", "Yes")) +
   geom_hline(aes(yintercept = .95), color = "slategrey", linetype = "dashed") +
-  scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 0.95, 1))
+  scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 0.95, 1)) +
+  theme(legend.position = "bottom")
 
 ```
 
@@ -1101,12 +1106,13 @@ res |>
   mutate(re = if_else(strata_scale > 0 & strata_sigma > 0, "re", "nore")) |>
   ggplot(aes(x = re, y = cover_pw/len, fill = boot_type)) +
   geom_boxplot(staple.color = "black", staplewidth = .1) +
-  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference\nand Estimation") +
+  scale_fill_manual(values = c("#009E73FF", "#CC79A7FF"), name = "Inference and Estimation") +
   labs(x = "Strata and cluster-level effects?", y = "Pointwise coverage") +
   facet_grid(.~inf_level) +
   scale_x_discrete(labels = c("No", "Yes")) +
   geom_hline(aes(yintercept = .95), color = "slategrey", linetype = "dashed") +
-  scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 0.95, 1))
+  scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 0.95, 1)) +
+  theme(legend.position = "bottom")
 
 
 ```
